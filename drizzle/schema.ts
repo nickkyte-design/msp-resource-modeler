@@ -78,6 +78,8 @@ export const settings = mysqlTable("settings", {
   displayTimezone: varchar("displayTimezone", { length: 8 }).notNull().default("EDT"),
   /** Year that the active schedule covers. */
   scheduleYear: int("scheduleYear").notNull().default(2026),
+  /** Optional engineer to pin as the "current user" for the "Show only mine" toggle. */
+  defaultEngineerId: int("defaultEngineerId"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

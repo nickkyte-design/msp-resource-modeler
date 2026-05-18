@@ -11,8 +11,14 @@ export default function Balance() {
   const { data: scheduleData } = trpc.schedule.list.useQuery({ year });
   const { data: engineers = [] } = trpc.engineers.list.useQuery();
   const [granularity, setGranularity] = useState<"weekly" | "monthly">("weekly");
+  const [selectedPod, setSelectedPod] = useState<number | "all">("all");
+  const podCount = settings?.podCount ?? 1;
 
-  const shifts = scheduleData?.shifts ?? [];
+  const allShifts = scheduleData?.shifts ?? [];
+  const shifts = useMemo(
+    () => (selectedPod === "all" ? allShifts : allShifts.filter((s) => s.podNumber === selectedPod)),
+    [allShifts, selectedPod],
+  );
 
   // Compute weekly hours per engineer per ISO week of `year`.
   const { weekKeys, monthKeys, perEngineerWeek, perEngineerMonth, perEngineerTotal } = useMemo(() => {
@@ -89,15 +95,36 @@ export default function Balance() {
         title="Workload Balance"
         description={`Per-engineer hours for ${year}. Target is ${SOFT_TARGET_HOURS_PER_WEEK}h/week (soft); the hard cap is 45h per any rolling 168h.`}
         actions={
-          <Tabs
-            value={granularity}
-            onValueChange={(v) => setGranularity(v as "weekly" | "monthly")}
-          >
-            <TabsList>
-              <TabsTrigger value="weekly">Weekly</TabsTrigger>
-              <TabsTrigger value="monthly">Monthly</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+              <button
+                type="button"
+                onClick={() => setSelectedPod("all")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === "all" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                All
+              </button>
+              {Array.from({ length: podCount }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSelectedPod(p)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Pod {p}
+                </button>
+              ))}
+            </div>
+            <Tabs
+              value={granularity}
+              onValueChange={(v) => setGranularity(v as "weekly" | "monthly")}
+            >
+              <TabsList>
+                <TabsTrigger value="weekly">Weekly</TabsTrigger>
+                <TabsTrigger value="monthly">Monthly</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         }
       />
 

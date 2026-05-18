@@ -19,9 +19,16 @@ export default function HeatMap() {
   const [tz, setTz] = useState<Timezone>(
     (settings?.displayTimezone as Timezone) ?? "EDT",
   );
+  const [selectedPod, setSelectedPod] = useState<number | "all">("all");
 
-  const shifts = scheduleData?.shifts ?? [];
+  const allShifts = scheduleData?.shifts ?? [];
   const podCount = settings?.podCount ?? 1;
+  const shifts = useMemo(
+    () => (selectedPod === "all" ? allShifts : allShifts.filter((s) => s.podNumber === selectedPod)),
+    [allShifts, selectedPod],
+  );
+  // Required coverage: full pod count when viewing all; 1 when filtered to a single pod.
+  const requiredCoverage = selectedPod === "all" ? podCount : 1;
 
   // Compute hour-of-year coverage. requiredCoverage = podCount.
   // We'll aggregate by day x hour for 365 days.
@@ -52,13 +59,13 @@ export default function HeatMap() {
     let gap = 0;
     for (let d = 0; d < heatmap.totalDays; d++) {
       for (let h = 0; h < 24; h++) {
-        if (heatmap.grid[d][h] < podCount) gap += podCount - heatmap.grid[d][h];
+        if (heatmap.grid[d][h] < requiredCoverage) gap += requiredCoverage - heatmap.grid[d][h];
       }
     }
     return gap;
-  }, [heatmap, podCount]);
+  }, [heatmap, requiredCoverage]);
 
-  const totalRequired = heatmap.totalDays * 24 * podCount;
+  const totalRequired = heatmap.totalDays * 24 * requiredCoverage;
   const coveragePct =
     totalRequired === 0 ? 0 : Math.max(0, Math.min(100, ((totalRequired - gapHours) / totalRequired) * 100));
 
@@ -69,18 +76,39 @@ export default function HeatMap() {
         title="Heat Map"
         description={`Hourly coverage density for ${year}. Each cell shows how many engineers are on-call. Gaps (cells below required pod count) indicate uncovered hours.`}
         actions={
-          <Select value={tz} onValueChange={(v) => setTz(v as Timezone)}>
-            <SelectTrigger className="w-[110px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TIMEZONES.map((z) => (
-                <SelectItem key={z} value={z}>
-                  {z}
-                </SelectItem>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Select value={tz} onValueChange={(v) => setTz(v as Timezone)}>
+              <SelectTrigger className="w-[110px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((z) => (
+                  <SelectItem key={z} value={z}>
+                    {z}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+              <button
+                type="button"
+                onClick={() => setSelectedPod("all")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === "all" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                All
+              </button>
+              {Array.from({ length: podCount }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSelectedPod(p)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Pod {p}
+                </button>
               ))}
-            </SelectContent>
-          </Select>
+            </div>
+          </div>
         }
       />
 
@@ -88,7 +116,11 @@ export default function HeatMap() {
         {/* Summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <SummaryCard label="Year Coverage" value={`${coveragePct.toFixed(1)}%`} />
-          <SummaryCard label="Required Pods" value={`${podCount}`} subtle="per hour" />
+          <SummaryCard
+            label={selectedPod === "all" ? "Required Pods" : `Viewing Pod ${selectedPod}`}
+            value={`${requiredCoverage}`}
+            subtle="per hour"
+          />
           <SummaryCard label="Total Shifts" value={shifts.length.toLocaleString()} />
           <SummaryCard
             label="Gap Hours"
@@ -122,7 +154,7 @@ export default function HeatMap() {
 
         {/* Heat map grid */}
         <div className="card-elegant p-5 overflow-auto">
-          <HeatGrid heatmap={heatmap} podCount={podCount} year={year} />
+          <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} />
         </div>
       </div>
     </div>

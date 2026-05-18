@@ -66,3 +66,10 @@
 - [x] Singleton seed guard prevents duplicates
 - [x] Verified: 2 pods × 15 engineers → 99.9% coverage, 16 gap hours/year
 - [x] Final checkpoint
+
+## v1.2 — Filtering & Visualization Polish
+- [x] Mirror Pod filter on Heat Map page (rescales coverage % when filtered to single pod)
+- [x] Mirror Pod filter on Balance page (totals/breakdown isolate to selected pod)
+- [x] Add "Default engineer" pin in Settings (persisted via new defaultEngineerId column)
+- [x] Add "Show only mine" toggle on Calendar
+- [x] Color shift cards by Pod when "All engineers" is selected, by Engineer otherwise

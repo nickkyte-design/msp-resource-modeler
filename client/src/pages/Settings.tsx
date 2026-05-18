@@ -191,6 +191,42 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Default Engineer (for "Show only mine" toggle) */}
+        <section className="card-elegant p-7">
+          <header className="mb-6">
+            <h2 className="font-display text-xl font-semibold tracking-tight">Default Engineer</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Pin an engineer as “you” to enable the <span className="font-medium text-foreground">Show only mine</span> toggle on the Calendar.
+            </p>
+          </header>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+            <div className="flex-1">
+              <Label htmlFor="default-engineer">Pinned engineer</Label>
+              <Select
+                value={settings.defaultEngineerId == null ? "none" : String(settings.defaultEngineerId)}
+                onValueChange={(v) =>
+                  updateSettings.mutate({
+                    defaultEngineerId: v === "none" ? null : parseInt(v, 10),
+                  })
+                }
+              >
+                <SelectTrigger id="default-engineer" className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {engineers.map((e) => (
+                    <SelectItem key={e.id} value={String(e.id)}>
+                      Engineer {e.name}
+                      {e.podNumber ? ` · Pod ${e.podNumber}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </section>
+
         {/* Schedule Year + Generation */}
         <section className="card-elegant p-7">
           <header className="mb-6">

@@ -162,6 +162,7 @@ export const appRouter = router({
           holidaysEnabled: z.boolean().optional(),
           displayTimezone: timezoneSchema.optional(),
           scheduleYear: z.number().int().min(2000).max(2100).optional(),
+          defaultEngineerId: z.number().int().nullable().optional(),
         }),
       )
       .mutation(async ({ input }) => {

@@ -43,6 +43,11 @@ export default function CalendarPage() {
   );
   const [selectedEngineer, setSelectedEngineer] = useState<number | "all">("all");
   const [selectedPod, setSelectedPod] = useState<number | "all">("all");
+  const [showOnlyMine, setShowOnlyMine] = useState(false);
+
+  const defaultEngineerId = settings?.defaultEngineerId ?? null;
+  const effectiveEngineer: number | "all" =
+    showOnlyMine && defaultEngineerId != null ? defaultEngineerId : selectedEngineer;
 
   const generate = trpc.schedule.generate.useMutation({
     onSuccess: (res) => {
@@ -59,19 +64,28 @@ export default function CalendarPage() {
 
   const filteredShifts = useMemo(() => {
     return shifts.filter((s) => {
-      if (selectedEngineer !== "all" && s.engineerId !== selectedEngineer) return false;
+      if (effectiveEngineer !== "all" && s.engineerId !== effectiveEngineer) return false;
       if (selectedPod !== "all" && s.podNumber !== selectedPod) return false;
       return true;
     });
-  }, [shifts, selectedEngineer, selectedPod]);
+  }, [shifts, effectiveEngineer, selectedPod]);
 
   const filteredTimeOff = useMemo(() => {
-    if (selectedEngineer === "all") return timeOff;
-    return timeOff.filter((t) => t.engineerId === selectedEngineer);
-  }, [timeOff, selectedEngineer]);
+    if (effectiveEngineer === "all") return timeOff;
+    return timeOff.filter((t) => t.engineerId === effectiveEngineer);
+  }, [timeOff, effectiveEngineer]);
+
+  // Color shifts by pod when no specific engineer is selected; by engineer otherwise.
+  // This makes pod boundaries pop in "All engineers" mode.
+  const colorByPod = effectiveEngineer === "all";
+  const podColors: Record<number, string> = {
+    1: "oklch(0.55 0.14 245)", // refined indigo
+    2: "oklch(0.58 0.14 30)",  // warm terracotta
+    3: "oklch(0.55 0.13 155)", // deep teal
+  };
 
   // Engineer color mapping for visual distinction
-  const engineerColor = useMemo(() => {
+  const engineerColorByEngineer = useMemo(() => {
     const m = new Map<number, string>();
     const palette = [
       "oklch(0.6 0.12 80)",
@@ -93,6 +107,15 @@ export default function CalendarPage() {
     engineers.forEach((e, i) => m.set(e.id, palette[i % palette.length]));
     return m;
   }, [engineers]);
+
+  // Resolve final color map per shift based on coloring mode.
+  const shiftColor = useMemo(() => {
+    return (shift: { engineerId: number; podNumber: number }) => {
+      if (colorByPod) return podColors[shift.podNumber] ?? "#888";
+      return engineerColorByEngineer.get(shift.engineerId) ?? "#888";
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorByPod, engineerColorByEngineer]);
 
   const engineerName = useMemo(() => {
     const m = new Map<number, string>();
@@ -143,8 +166,19 @@ export default function CalendarPage() {
                 </button>
               ))}
             </div>
+            {defaultEngineerId != null && (
+              <button
+                type="button"
+                onClick={() => setShowOnlyMine((v) => !v)}
+                className={`px-3 h-9 rounded-md border text-xs font-medium transition-colors ${showOnlyMine ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground hover:text-foreground"}`}
+                title="Show only my shifts"
+              >
+                Show only mine
+              </button>
+            )}
             <Select
-              value={String(selectedEngineer)}
+              value={showOnlyMine ? String(defaultEngineerId) : String(selectedEngineer)}
+              disabled={showOnlyMine}
               onValueChange={(v) =>
                 setSelectedEngineer(v === "all" ? "all" : parseInt(v, 10))
               }
@@ -228,7 +262,7 @@ export default function CalendarPage() {
             shifts={filteredShifts}
             timeOff={filteredTimeOff}
             tz={tz}
-            engineerColor={engineerColor}
+            shiftColor={shiftColor}
             engineerName={engineerName}
           />
         )}
@@ -238,7 +272,7 @@ export default function CalendarPage() {
             shifts={filteredShifts}
             timeOff={filteredTimeOff}
             tz={tz}
-            engineerColor={engineerColor}
+            shiftColor={shiftColor}
             engineerName={engineerName}
             onPickDay={(d) => {
               setCursor(d);
@@ -275,14 +309,14 @@ function WeekView({
   shifts,
   timeOff,
   tz,
-  engineerColor,
+  shiftColor,
   engineerName,
 }: {
   cursor: number;
   shifts: { id: number; engineerId: number; podNumber: number; startMs: number; durationHours: number }[];
   timeOff: { engineerId: number; kind: string; date: string }[];
   tz: Timezone;
-  engineerColor: Map<number, string>;
+  shiftColor: (s: { engineerId: number; podNumber: number }) => string;
   engineerName: Map<number, string>;
 }) {
   const weekStart = startOfWeekUtcMs(cursor);
@@ -358,7 +392,7 @@ function WeekView({
                   }}
                 >
                   {cellShifts.map((s) => {
-                    const color = engineerColor.get(s.engineerId) ?? "#888";
+                    const color = shiftColor(s);
                     const heightPct = s.durationHours * 100;
                     return (
                       <div
@@ -396,7 +430,7 @@ function MonthView({
   shifts,
   timeOff,
   tz,
-  engineerColor,
+  shiftColor,
   engineerName,
   onPickDay,
 }: {
@@ -404,7 +438,7 @@ function MonthView({
   shifts: { id: number; engineerId: number; podNumber: number; startMs: number; durationHours: number }[];
   timeOff: { engineerId: number; kind: string; date: string }[];
   tz: Timezone;
-  engineerColor: Map<number, string>;
+  shiftColor: (s: { engineerId: number; podNumber: number }) => string;
   engineerName: Map<number, string>;
   onPickDay: (utcMs: number) => void;
 }) {
@@ -477,7 +511,7 @@ function MonthView({
                     key={s.id}
                     className="h-4 rounded-sm px-1 flex items-center text-[9px] font-semibold text-white tabular-nums"
                     style={{
-                      background: engineerColor.get(s.engineerId) ?? "#888",
+                      background: shiftColor(s),
                     }}
                     title={`Engineer ${engineerName.get(s.engineerId)} · Pod ${s.podNumber}`}
                   >
