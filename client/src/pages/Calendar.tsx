@@ -42,6 +42,7 @@ export default function CalendarPage() {
     (settings?.displayTimezone as Timezone) ?? "EDT",
   );
   const [selectedEngineer, setSelectedEngineer] = useState<number | "all">("all");
+  const [selectedPod, setSelectedPod] = useState<number | "all">("all");
 
   const generate = trpc.schedule.generate.useMutation({
     onSuccess: (res) => {
@@ -57,9 +58,12 @@ export default function CalendarPage() {
   const timeOff = scheduleData?.timeOff ?? [];
 
   const filteredShifts = useMemo(() => {
-    if (selectedEngineer === "all") return shifts;
-    return shifts.filter((s) => s.engineerId === selectedEngineer);
-  }, [shifts, selectedEngineer]);
+    return shifts.filter((s) => {
+      if (selectedEngineer !== "all" && s.engineerId !== selectedEngineer) return false;
+      if (selectedPod !== "all" && s.podNumber !== selectedPod) return false;
+      return true;
+    });
+  }, [shifts, selectedEngineer, selectedPod]);
 
   const filteredTimeOff = useMemo(() => {
     if (selectedEngineer === "all") return timeOff;
@@ -107,7 +111,7 @@ export default function CalendarPage() {
             : `Showing ${shifts.length.toLocaleString()} shifts for ${year} in ${tz}.`
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <Select value={tz} onValueChange={(v) => setTz(v as Timezone)}>
               <SelectTrigger className="w-[110px]">
                 <SelectValue />
@@ -120,6 +124,25 @@ export default function CalendarPage() {
                 ))}
               </SelectContent>
             </Select>
+            <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+              <button
+                type="button"
+                onClick={() => setSelectedPod("all")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === "all" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                All
+              </button>
+              {Array.from({ length: settings?.podCount ?? 1 }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSelectedPod(p)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Pod {p}
+                </button>
+              ))}
+            </div>
             <Select
               value={String(selectedEngineer)}
               onValueChange={(v) =>
