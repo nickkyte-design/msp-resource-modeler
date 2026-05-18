@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
+  AlertTriangle,
   CalendarDays,
   Flame,
   Layers3,
@@ -26,6 +27,7 @@ const menuItems = [
   { icon: Users, label: "Roster", path: "/roster" },
   { icon: Layers3, label: "Pods & Locations", path: "/pods" },
   { icon: Flame, label: "Heat Map", path: "/heatmap" },
+  { icon: AlertTriangle, label: "Gap Report", path: "/gaps" },
   { icon: Scale, label: "Balance", path: "/balance" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ] as const;

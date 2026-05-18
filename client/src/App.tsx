@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Balance from "./pages/Balance";
 import CalendarPage from "./pages/Calendar";
+import GapReport from "./pages/GapReport";
 import HeatMap from "./pages/HeatMap";
 import PodsLocations from "./pages/PodsLocations";
 import Roster from "./pages/Roster";
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/roster" component={Roster} />
         <Route path="/pods" component={PodsLocations} />
         <Route path="/heatmap" component={HeatMap} />
+        <Route path="/gaps" component={GapReport} />
         <Route path="/balance" component={Balance} />
         <Route path="/settings" component={SettingsPage} />
         <Route path="/404" component={NotFound} />
