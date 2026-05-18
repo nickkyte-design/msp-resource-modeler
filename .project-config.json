@@ -1,0 +1,43 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "server",
+    "db",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://4VXVXkreRBu63PG.8ed6d24fae45:f0f33eXeNm3dO0hgLw4S@gateway06.us-east-1.prod.aws.tidbcloud.com:4000/JH8dfP72atft9iLeoPx5YK?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": [
+    "no_db_push"
+  ],
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663348263693/JH8dfP72atft9iLeoPx5YK",
+    "access_key_id": "ASIAZV3A2ECZGE6TILLL",
+    "secret_access_key": "a8MZvq6mFFceyeIxJ79/1Fb6iheoMGn/hGH2hVMs",
+    "session_token": "IQoJb3JpZ2luX2VjEP3//////////wEaCXVzLWVhc3QtMSJHMEUCIDdxY8rJ3svIYnN+FvivgwQlNuLJBVbVQp1LJJkPXgEAAiEAsotTllOvTyEgHQs1W/uYVR6+4/IZB1Z34URorWW0KG8q/wMIxv//////////ARAEGgw2NjUzODYwOTg4NjYiDPGg7xOFjv9ysusvvyrTA/zGLRgxpTmibW87oquOeoPn0sKdGkuEWNW7JogeHlMr/NBCEFUqx/smk8FQRZJNQwBajQ1zyQhDCflysl1B7l01NSa1qRdKWJHausIxNr/04XcIxjeym1dbKJfx9fkqapcX9l5T5oaYRODVozT6OQi02SM/A8lacWIPr87wH7nqsl4izNWMmXznGKG58X57TrtcV06/lGJfD/9BtVyvPAPvPheFRPz2oSEyJ9q34wz3NeyQTy7R6UfDXsskWKh1ioK2aQJNMNWeI1PWYfWNwS67SAx1QFzI/M+rV+oUqtc7dKujd3bKMs26I9UxD0qPjLGEkpVCV6UUQZo+FtB0o1cAgZ76AwF0XP/D7VRzwBv9FhMlP828XYcp0gV3kF17G8ZgfNzL172FoN9xMekgSU17fc+y62DIu0NtF6zVoslj56k3ZMqcQEGOnLSblc+qLJo+HIhUhRx//BTWTMUzKis1J9faREYAgPizEzjAKtG7s6TKKivnlLeemjcRu+yqeCYyYyfVUKdjVTL8ZDC6iferBk8dfK/tw47g6r+JJfr/XWvek7CSwUvToAxCXPP7eH3uh/tUYC8yEKxIMvSXRdxHi5KbRStnYfsuHTN6ixDvVlnXMNnqrdAGOp0BaPbzU7TeCHnHllvWyedDSiOh56p/FOq3av6uSHsJFvObPfup6+XFWA/5QYsqN9nk1iuVUHQUs0Z750QoQ+Bh6uI4fd3js7XgS3D51pfDpE/6j1AZ/fT1HMzdjsA+xcTemjephflMbADaNxEdFO26JqoNABuE8EKh4DOysAmZasy2qn2lgodqiQ5B7fkF/hFbUrcABPXci1Po3VNnPA==",
+    "expiration": "2026-05-19T08:23:53.000Z"
+  },
+  "name": "msp-resource-modeler",
+  "path": "/home/ubuntu/msp-resource-modeler",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "32FnN2edPYTJNwhsXaBKne",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "kRmLsY7qPrnBJySJLDnJVn",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Nicholas Kyte",
+    "OWNER_OPEN_ID": "6qqzR74BoyrDamwFqt6B2C",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "26395b62-8192-403c-aaa8-67daf2e3365e",
+    "VITE_APP_ID": "JH8dfP72atft9iLeoPx5YK",
+    "VITE_APP_LOGO": "",
+    "VITE_APP_TITLE": "MSP Resource Modeler",
+    "VITE_FRONTEND_FORGE_API_KEY": "o6V4UYefRaSUSpwt2owybA",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}
