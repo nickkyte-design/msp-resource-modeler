@@ -406,8 +406,8 @@ function WeekView({
                           zIndex: 5,
                         }}
                       >
-                        <div className="font-semibold">
-                          E{engineerName.get(s.engineerId) ?? s.engineerId}
+                        <div className="font-semibold truncate">
+                          {engineerName.get(s.engineerId) ?? `#${s.engineerId}`}
                         </div>
                         <div className="text-[10px] opacity-90">
                           Pod {s.podNumber} · {s.durationHours}h

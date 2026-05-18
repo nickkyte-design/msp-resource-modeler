@@ -107,7 +107,7 @@ export default function Roster() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40">
-                  <TableHead className="w-[80px]">Engineer</TableHead>
+                  <TableHead className="w-[220px]">Engineer</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Timezone</TableHead>
                   <TableHead>Pod</TableHead>
@@ -123,11 +123,14 @@ export default function Roster() {
                   return (
                     <TableRow key={eng.id} className="hover:bg-muted/30">
                       <TableCell>
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
-                            {eng.name}
-                          </div>
-                        </div>
+                        <NameEditor
+                          value={eng.name}
+                          onCommit={(next) => {
+                            if (next && next !== eng.name) {
+                              updateMut.mutate({ id: eng.id, name: next });
+                            }
+                          }}
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -312,6 +315,70 @@ export default function Roster() {
         }}
       />
     </div>
+  );
+}
+
+function NameEditor({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (next: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  // Keep draft in sync if value changes externally while not editing.
+  if (!editing && draft !== value) setDraft(value);
+
+  const initials = value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || value.slice(0, 2).toUpperCase();
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          value={draft}
+          maxLength={64}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const trimmed = draft.trim();
+            if (trimmed) onCommit(trimmed);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              setDraft(value);
+              setEditing(false);
+            }
+          }}
+          className="h-8 w-[160px]"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="flex items-center gap-2.5 group text-left"
+      title="Click to rename"
+    >
+      <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0">
+        {initials}
+      </div>
+      <span className="font-medium text-sm group-hover:text-primary transition-colors">
+        {value}
+      </span>
+      <Pencil className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors" />
+    </button>
   );
 }
 
