@@ -64,30 +64,40 @@ describe("computeHeadcountSuggestion", () => {
   it("returns minimum 5/pod from the cycle math", () => {
     const s = computeHeadcountSuggestion(1, false, false);
     expect(s.minimumPerPod).toBe(5);
-    // Without PTO/holidays, recommended equals minimum.
-    expect(s.recommendedPerPod).toBe(5);
+    // Even without PTO/holidays we still add the 10% clustering margin and +1 reliever.
+    // ceil(5 * 1.10) + 1 = 7
+    expect(s.recommendedPerPod).toBe(7);
     expect(s.minimumTotal).toBe(5);
-    expect(s.recommendedTotal).toBe(5);
+    expect(s.recommendedTotal).toBe(7);
   });
 
   it("adds a buffer when PTO + holidays are enabled", () => {
     const s = computeHeadcountSuggestion(1, true, true);
     expect(s.minimumPerPod).toBe(5);
-    // 5 * (1 + (10 + 11)/52/5) ≈ 5 * 1.0808 ≈ 5.4 → ceil = 6
-    expect(s.recommendedPerPod).toBe(6);
-    expect(s.recommendedTotal).toBe(6);
+    // 5 * (1 + 0.0808 + 0.10) ≈ 5.904 → ceil = 6, plus +1 reliever = 7
+    expect(s.recommendedPerPod).toBe(7);
+    expect(s.recommendedTotal).toBe(7);
   });
 
   it("scales totals by pod count", () => {
     const s = computeHeadcountSuggestion(3, true, true);
     expect(s.minimumTotal).toBe(15);
-    expect(s.recommendedTotal).toBe(18);
+    expect(s.recommendedTotal).toBe(21);
+  });
+
+  it("recommendation is always at least minimum + 1 floating reliever", () => {
+    for (const pods of [1, 2, 3] as const) {
+      const s = computeHeadcountSuggestion(pods, false, false);
+      expect(s.recommendedPerPod).toBeGreaterThanOrEqual(s.minimumPerPod + 1);
+    }
   });
 
   it("provides reasoning lines in the suggestion", () => {
     const s = computeHeadcountSuggestion(2, true, false);
-    expect(s.reasoning.length).toBeGreaterThanOrEqual(3);
+    expect(s.reasoning.length).toBeGreaterThanOrEqual(4);
     expect(s.reasoning.join(" ")).toContain("21");
     expect(s.reasoning.join(" ")).toContain("PTO");
+    expect(s.reasoning.join(" ")).toContain("clustering");
+    expect(s.reasoning.join(" ")).toContain("floating reliever");
   });
 });

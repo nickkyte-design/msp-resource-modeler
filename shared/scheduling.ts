@@ -75,10 +75,14 @@ export const WEEKDAY_LABELS_FULL = [
  *   Each pod needs 21 eight-hour shifts per week (3 shifts/day × 7 days).
  *   Each engineer works at most 5 shifts/week (the 120h-on / 48h-off cycle),
  *   so we need at least ceil(21 / 5) = 5 engineers per pod just to satisfy the rotation.
- * - **recommendedPerPod** — minimum plus a buffer that absorbs PTO + holidays
- *   without leaving gaps. PTO (10) + holidays (11) = 21 missing days/year per engineer
- *   = ~3 weeks of lost capacity. With a 5-engineer pod we need ~3/52 ≈ 6% headroom,
- *   bumping the recommendation to 6 per pod (one floating reliever).
+ * - **recommendedPerPod** — minimum plus a buffer sized to realistically achieve
+ *   **zero gaps** even when PTO + holidays cluster and a few engineers carry hard
+ *   preferences. The buffer combines:
+ *     a) PTO/holiday capacity loss averaged year-round (~8% with both enabled).
+ *     b) A clustering safety margin (~10%) for weeks when multiple engineers in the
+ *        same pod are simultaneously off or unavailable due to hard preferences.
+ *     c) An always-on +1 “floating reliever” so a single sick day or last-minute
+ *        preference change cannot drop the pod below the rotation floor.
  */
 export interface HeadcountSuggestion {
   minimumPerPod: number;
@@ -105,7 +109,21 @@ export function computeHeadcountSuggestion(
   if (ptoEnabled) lossFraction += PTO_DAYS_PER_YEAR / 52 / 5;
   if (holidaysEnabled) lossFraction += HOLIDAY_DAYS_PER_YEAR / 52 / 5;
 
-  const recommendedPerPod = Math.ceil(minimumPerPod * (1 + lossFraction));
+  // Clustering safety margin: PTO and holidays are random and often land in the
+  // same week for multiple engineers in the same pod. Hard preferences (e.g.
+  // “never Sundays”) further reduce per-engineer capacity in ways the year-average
+  // cannot see. We add a flat 10% margin so the recommendation is robust against
+  // local clustering rather than only globally adequate.
+  const CLUSTERING_MARGIN = 0.10;
+
+  // Floating reliever: always +1 engineer per pod so a single unexpected absence
+  // never drops the pod below the rotation floor.
+  const FLOATING_RELIEVER = 1;
+
+  const recommendedPerPod = Math.max(
+    minimumPerPod + FLOATING_RELIEVER,
+    Math.ceil(minimumPerPod * (1 + lossFraction + CLUSTERING_MARGIN)) + FLOATING_RELIEVER,
+  );
 
   const reasoning: string[] = [
     `Each pod needs ${shiftsPerWeekPerPod} eight-hour shifts per week (3 × 7 days).`,
@@ -118,12 +136,16 @@ export function computeHeadcountSuggestion(
     reasoning.push(
       `Add buffer for ${days} PTO/holiday days per engineer per year (≈ ${(lossFraction * 100).toFixed(0)}% capacity loss).`,
     );
-    reasoning.push(
-      `Recommended with buffer: ⌈${minimumPerPod} × (1 + ${lossFraction.toFixed(2)})⌉ = ${recommendedPerPod} engineers per pod.`,
-    );
-  } else {
-    reasoning.push(`No PTO or holidays enabled — recommendation matches the minimum.`);
   }
+  reasoning.push(
+    `Add a ${(CLUSTERING_MARGIN * 100).toFixed(0)}% clustering margin for weeks when PTO, holidays, or hard preferences overlap inside one pod.`,
+  );
+  reasoning.push(
+    `Add a +${FLOATING_RELIEVER} floating reliever per pod so a single unexpected absence cannot drop the pod below the rotation floor.`,
+  );
+  reasoning.push(
+    `Zero-gap recommendation: ${recommendedPerPod} engineers per pod (${recommendedPerPod * podCount} total for ${podCount} pod${podCount === 1 ? "" : "s"}).`,
+  );
 
   return {
     minimumPerPod,
