@@ -1,0 +1,1 @@
+ALTER TABLE `shifts` ADD `manualOverride` boolean DEFAULT false NOT NULL;

@@ -46,6 +46,13 @@ export interface SchedulerInput {
   year: number;
   podCount: 1 | 2 | 3;
   engineers: SchedulerEngineerInput[];
+  /**
+   * Manual-override shifts already on the calendar.
+   * The auto-scheduler will count these toward each engineer's 45h/168h cap
+   * so it never accidentally overruns the cap when stacking auto shifts.
+   * It does NOT remove overlapping auto shifts — overrides coexist with auto coverage.
+   */
+  existingShifts?: ShiftBlock[];
 }
 
 export interface SchedulerOutput {
@@ -153,6 +160,14 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
     // We use a sliding sum approach by storing all assigned shift start times per engineer.
     const engineerShiftHistory: Record<number, ShiftBlock[]> = {};
     for (const e of pool) engineerShiftHistory[e.id] = [];
+    // Pre-seed history with manual overrides so the 45h/168h cap accounts for them.
+    if (input.existingShifts) {
+      for (const s of input.existingShifts) {
+        if (engineerShiftHistory[s.engineerId]) {
+          engineerShiftHistory[s.engineerId].push(s);
+        }
+      }
+    }
 
     // For each day of the year, decide which engineer covers each 8-hour slot (3 slots/day).
     // Slots: 00-08, 08-16, 16-24 (UTC). Soft preference: 8h shifts.

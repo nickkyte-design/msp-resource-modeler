@@ -100,6 +100,8 @@ export const shifts = mysqlTable("shifts", {
   durationHours: int("durationHours").notNull(),
   /** Year this shift belongs to (for fast filtering). */
   scheduleYear: int("scheduleYear").notNull(),
+  /** True when manually placed by the user via the Day Schedule drawer; preserved across re-generation. */
+  manualOverride: boolean("manualOverride").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

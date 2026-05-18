@@ -13,16 +13,21 @@ import {
   bulkInsertShifts,
   bulkInsertTimeOff,
   bulkUpdatePreferences,
+  clearAutoShiftsForYear,
   clearShiftsForYear,
   clearTimeOffForYear,
   createEngineer,
   createLocation,
+  createShift,
   deleteEngineer,
   deleteLocation,
+  deleteShift,
   getSettings,
   listEngineers,
   listLocations,
+  listManualOverridesForYear,
   listShiftsForYear,
+  listShiftsInRange,
   listTimeOffForYear,
   seedDefaultDataIfEmpty,
   updateEngineer,
@@ -284,6 +289,10 @@ export const appRouter = router({
           timeOffByEng.get(t.engineerId)!.add(t.date);
         }
 
+        // Step 2.5: load existing manual overrides so the scheduler accounts for
+        // them in the 45h/168h cap when assigning new auto shifts.
+        const existingOverrides = await listManualOverridesForYear(year);
+
         // Step 3: generate schedule.
         const result = generateSchedule({
           year,
@@ -300,10 +309,16 @@ export const appRouter = router({
                 (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
               timeOffDates: timeOffByEng.get(e.id) ?? new Set(),
             })),
+          existingShifts: existingOverrides.map((o) => ({
+            engineerId: o.engineerId,
+            podNumber: o.podNumber,
+            startMs: Number(o.startMs),
+            durationHours: o.durationHours,
+          })),
         });
 
-        // Step 4: persist shifts.
-        await clearShiftsForYear(year);
+        // Step 4: persist shifts. Preserve manual overrides; clear only auto shifts.
+        await clearAutoShiftsForYear(year);
         await bulkInsertShifts(
           result.shifts.map((s) => ({
             engineerId: s.engineerId,
@@ -311,15 +326,70 @@ export const appRouter = router({
             startMs: s.startMs,
             durationHours: s.durationHours,
             scheduleYear: year,
+            manualOverride: false,
           })),
         );
 
         return {
           year,
-          totalShifts: result.shifts.length,
+          totalShifts: result.shifts.length + existingOverrides.length,
+          autoShifts: result.shifts.length,
+          manualOverrides: existingOverrides.length,
           totalGapHours: result.totalGapHours,
           gapHoursPerPod: result.gapHoursPerPod,
         };
+      }),
+  }),
+
+  // ====== Shifts (manual overrides) ======
+  shifts: router({
+    listForDay: publicProcedure
+      .input(
+        z.object({
+          year: z.number().int(),
+          // UTC ms representing midnight of the day's window start (already TZ-corrected by the caller).
+          dayStartMs: z.number(),
+          dayEndMs: z.number(),
+        }),
+      )
+      .query(async ({ input }) => {
+        // Pull a wide window so a shift starting late on the previous day still surfaces.
+        const widenedStart = input.dayStartMs - 12 * 60 * 60 * 1000;
+        const widenedEnd = input.dayEndMs + 12 * 60 * 60 * 1000;
+        const rows = await listShiftsInRange(input.year, widenedStart, widenedEnd);
+        // Trim to shifts that intersect the day window itself.
+        return rows.filter((s) => {
+          const end = s.startMs + s.durationHours * 60 * 60 * 1000;
+          return end > input.dayStartMs && s.startMs < input.dayEndMs;
+        });
+      }),
+
+    createOverride: publicProcedure
+      .input(
+        z.object({
+          engineerId: z.number().int(),
+          podNumber: z.number().int().min(1).max(3),
+          startMs: z.number(),
+          durationHours: z.number().int().min(1).max(12),
+          scheduleYear: z.number().int(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        return createShift({
+          engineerId: input.engineerId,
+          podNumber: input.podNumber,
+          startMs: input.startMs,
+          durationHours: input.durationHours,
+          scheduleYear: input.scheduleYear,
+          manualOverride: true,
+        });
+      }),
+
+    deleteOverride: publicProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteShift(input.id);
+        return { success: true };
       }),
   }),
 });

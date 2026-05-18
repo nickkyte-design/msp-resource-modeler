@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import DayScheduleDrawer from "@/components/DayScheduleDrawer";
 import { formatHour, monthName, monthNameShort, toTzParts } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { findGaps, clipGapsToWindow } from "@shared/gaps";
@@ -46,6 +47,17 @@ export default function GapReport() {
 
   const allShifts = scheduleData?.shifts ?? [];
   const [, navigate] = useLocation();
+
+  // Day Schedule drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerDate, setDrawerDate] = useState<string | null>(null);
+  const [drawerPod, setDrawerPod] = useState<number>(1);
+  const openDay = (year: number, month: number, day: number, pod: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    setDrawerDate(dateStr);
+    setDrawerPod(pod);
+    setDrawerOpen(true);
+  };
 
   // Compute contiguous gap intervals per pod (uses shared pure helper).
   const gaps = useMemo<Gap[]>(() => {
@@ -221,7 +233,18 @@ export default function GapReport() {
             month={selectedMonth}
             tz={tz}
             podsInScope={podsInScope}
-            onDayClick={(month) => setSelectedMonth(month)}
+            onMonthZoom={(month) => setSelectedMonth(month)}
+            onDayOpen={(month, day) => {
+              // Pick the pod with the largest gap on that day, or 1 if none.
+              const candidates = visibleGaps.filter((g) => {
+                const sp = toTzParts(g.startMs, tz);
+                return sp.month === month && sp.day === day;
+              });
+              const pod = selectedPod === "all"
+                ? (candidates[0]?.podNumber ?? 1)
+                : (selectedPod as number);
+              openDay(year, month, day, pod);
+            }}
           />
         )}
 
@@ -379,8 +402,7 @@ export default function GapReport() {
                             size="sm"
                             className="h-7 px-2 text-xs"
                             onClick={() => {
-                              const dateStr = `${sp.year}-${String(sp.month + 1).padStart(2, "0")}-${String(sp.day).padStart(2, "0")}`;
-                              navigate(`/?date=${dateStr}&pod=${g.podNumber}&view=week`);
+                              openDay(sp.year, sp.month, sp.day, g.podNumber);
                             }}
                           >
                             Fix
@@ -396,6 +418,16 @@ export default function GapReport() {
           </div>
         )}
       </div>
+
+      <DayScheduleDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        dateStr={drawerDate}
+        initialPod={drawerPod}
+        podCount={podCount}
+        tz={tz}
+        year={year}
+      />
     </div>
   );
 }
@@ -447,14 +479,16 @@ function GapCalendar({
   month,
   tz,
   podsInScope,
-  onDayClick,
+  onMonthZoom,
+  onDayOpen,
 }: {
   gaps: { startMs: number; endMs: number; durationHours: number; podNumber: number }[];
   year: number;
   month: number | "all";
   tz: Timezone;
   podsInScope: number;
-  onDayClick: (month: number) => void;
+  onMonthZoom: (month: number) => void;
+  onDayOpen: (month: number, day: number) => void;
 }) {
   // Compute gap-hours per (year, month, day) bucket in the display TZ.
   const dayHours = useMemo(() => {
@@ -508,9 +542,10 @@ function GapCalendar({
             dayHours={dayHours}
             podsInScope={podsInScope}
             compact={month === "all"}
-            onClick={() => {
-              if (month === "all") onDayClick(m);
+            onMonthClick={() => {
+              if (month === "all") onMonthZoom(m);
             }}
+            onDayClick={(day) => onDayOpen(m, day)}
           />
         ))}
       </div>
@@ -524,14 +559,16 @@ function MiniMonth({
   dayHours,
   podsInScope,
   compact,
-  onClick,
+  onMonthClick,
+  onDayClick,
 }: {
   year: number;
   month: number;
   dayHours: Map<string, number>;
   podsInScope: number;
   compact: boolean;
-  onClick: () => void;
+  onMonthClick: () => void;
+  onDayClick: (day: number) => void;
 }) {
   const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0=Sun..6=Sat
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -545,21 +582,24 @@ function MiniMonth({
   ).reduce((a, b) => a + b, 0);
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={`text-left rounded-md border bg-muted/10 p-3 transition-colors ${
-        compact ? "hover:bg-muted/30 cursor-pointer" : "cursor-default"
+        compact ? "hover:bg-muted/30" : ""
       }`}
     >
-      <div className="flex items-baseline justify-between mb-2">
+      <button
+        type="button"
+        onClick={onMonthClick}
+        disabled={!compact}
+        className={`flex items-baseline justify-between w-full mb-2 ${compact ? "cursor-pointer" : "cursor-default"}`}
+      >
         <div className="text-xs font-semibold tracking-tight">
           {monthName(month)}
         </div>
         <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground tabular-nums">
           {monthGapHours === 0 ? "Full" : `${monthGapHours}h gap`}
         </div>
-      </div>
+      </button>
       <div className="grid grid-cols-7 gap-px text-[9px] text-muted-foreground mb-1">
         {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
           <div key={i} className="text-center">{d}</div>
@@ -570,21 +610,26 @@ function MiniMonth({
           if (d === null) return <div key={i} className="aspect-square" />;
           const h = dayHours.get(`${month}-${d}`) ?? 0;
           return (
-            <div
+            <button
+              type="button"
               key={i}
-              className="aspect-square rounded-sm flex items-center justify-center text-[10px] font-medium tabular-nums"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onDayClick(d);
+              }}
+              className="aspect-square rounded-sm flex items-center justify-center text-[10px] font-medium tabular-nums hover:ring-2 hover:ring-foreground/40 transition-all cursor-pointer"
               style={{
                 background: dayColor(h, podsInScope),
                 color: h > podsInScope * 12 ? "white" : "inherit",
               }}
-              title={`${monthName(month)} ${d} — ${h === 0 ? "full coverage" : `${h}h gap`}`}
+              title={`${monthName(month)} ${d} — ${h === 0 ? "full coverage" : `${h}h gap`} (click to inspect)`}
             >
               {compact ? "" : d}
-            </div>
+            </button>
           );
         })}
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -92,3 +92,16 @@
 - [x] Settings: dynamic auto-suggested headcount per pod (factoring 48h/120h cycle + PTO + holidays) with reasoning popover
 - [x] Settings: Re-balance Pods action redistributes engineers and re-runs scheduler
 - [x] Vitest: covers headcount-suggestion math and re-balance assignment (10 new tests, 35 total passing)
+
+## v1.6 — Zero-gap headcount recommendation
+- [x] Headcount adds 10% clustering margin + 1 floating reliever per pod
+- [x] Reasoning popover updated; tests adjusted (43 total passing)
+
+## v1.7 — Click-to-fix gap workflow
+- [ ] Add `manualOverride` boolean column to shifts table (migration)
+- [ ] Add tRPC procedures: `shifts.listForDay`, `shifts.createOverride`, `shifts.deleteOverride`
+- [ ] Build `DayScheduleDrawer` component with per-pod 24h timeline, gap highlights, and add-shift form
+- [ ] Make Gap Report calendar day cells clickable → open the drawer with that day + pod pre-selected
+- [ ] Make Gap Report month tile (in All-Year mode) clickable → switch to that month
+- [ ] Scheduler preserves `manualOverride = 1` shifts on re-generation
+- [ ] Vitest: override persistence + gap-after-override math (≥ 4 new tests)

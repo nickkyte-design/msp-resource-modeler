@@ -239,10 +239,49 @@ export async function listShiftsForYear(year: number) {
   return db.select().from(shifts).where(eq(shifts.scheduleYear, year)).orderBy(asc(shifts.startMs));
 }
 
+/** Shifts whose start falls inside [windowStartMs, windowEndMs). */
+export async function listShiftsInRange(year: number, windowStartMs: number, windowEndMs: number) {
+  const all = await listShiftsForYear(year);
+  return all.filter((s) => s.startMs >= windowStartMs && s.startMs < windowEndMs);
+}
+
+/** Clear only auto-generated shifts (manualOverride = false). Keeps manual placements safe. */
+export async function clearAutoShiftsForYear(year: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(shifts).where(
+    and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, false)),
+  );
+}
+
 export async function clearShiftsForYear(year: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(shifts).where(eq(shifts.scheduleYear, year));
+}
+
+export async function listManualOverridesForYear(year: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(shifts)
+    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true)))
+    .orderBy(asc(shifts.startMs));
+}
+
+export async function createShift(row: InsertShift) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(shifts).values(row);
+  const rows = await db.select().from(shifts).orderBy(desc(shifts.id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function deleteShift(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(shifts).where(eq(shifts.id, id));
 }
 
 export async function bulkInsertShifts(rows: InsertShift[]) {
