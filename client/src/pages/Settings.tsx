@@ -13,13 +13,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import {
+  computeHeadcountSuggestion,
   HOLIDAY_DAYS_PER_YEAR,
   PTO_DAYS_PER_YEAR,
-  SUGGESTED_HEADCOUNT_PER_POD,
   TIMEZONES,
   type Timezone,
 } from "@shared/scheduling";
-import { CheckCircle2, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, Info, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +37,18 @@ export default function SettingsPage() {
   const updateSettings = trpc.settings.update.useMutation({
     onSuccess: () => utils.settings.get.invalidate(),
   });
+  const rebalance = trpc.engineers.rebalancePods.useMutation({
+    onSuccess: async (res) => {
+      await utils.engineers.list.invalidate();
+      toast.success(
+        `Re-balanced ${res.assignedCount} engineers across ${res.podCount} pod${res.podCount === 1 ? "" : "s"}.`,
+      );
+      // Trigger a fresh schedule using the new pod assignments.
+      generateSchedule.mutate({ year: settings?.scheduleYear ?? new Date().getUTCFullYear() });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const generateSchedule = trpc.schedule.generate.useMutation({
     onSuccess: (res) => {
       utils.schedule.list.invalidate();
@@ -63,9 +80,14 @@ export default function SettingsPage() {
   }
 
   const podCount = settings.podCount as 1 | 2 | 3;
-  const suggestedHeadcount = SUGGESTED_HEADCOUNT_PER_POD[podCount];
+  const suggestion = computeHeadcountSuggestion(
+    podCount,
+    settings.ptoEnabled,
+    settings.holidaysEnabled,
+  );
   const activeCount = engineers.filter((e) => e.active).length;
-  const meetsSuggested = activeCount >= suggestedHeadcount;
+  const meetsSuggested = activeCount >= suggestion.recommendedTotal;
+  const meetsMinimum = activeCount >= suggestion.minimumTotal;
 
   return (
     <div>
@@ -108,18 +130,44 @@ export default function SettingsPage() {
             ))}
           </div>
           <div
-            className={`rounded-md p-4 text-sm flex items-start gap-3 ${
+            className={`rounded-md p-4 text-sm flex items-start gap-3 flex-wrap ${
               meetsSuggested
                 ? "bg-emerald-500/8 border border-emerald-500/20 text-emerald-900 dark:text-emerald-200"
                 : "bg-amber-500/8 border border-amber-500/30 text-amber-900 dark:text-amber-200"
             }`}
           >
-            <div className="font-medium">
-              Suggested headcount for {podCount} pod{podCount === 1 ? "" : "s"}:{" "}
-              <span className="font-semibold">{suggestedHeadcount}</span> engineers
+            <div className="font-medium flex items-center gap-2 flex-wrap">
+              <span>
+                Recommended for {podCount} pod{podCount === 1 ? "" : "s"}:{" "}
+                <span className="font-semibold">{suggestion.recommendedTotal}</span>{" "}
+                engineers
+              </span>
+              <span className="text-xs text-muted-foreground">
+                ({suggestion.recommendedPerPod}/pod · minimum {suggestion.minimumPerPod}/pod)
+              </span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                    <Info className="h-3.5 w-3.5 mr-1" />
+                    Why?
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-96 text-xs leading-relaxed space-y-1.5">
+                  <div className="font-semibold text-sm mb-1">How this is calculated</div>
+                  {suggestion.reasoning.map((line, i) => (
+                    <div key={i} className="text-muted-foreground">{line}</div>
+                  ))}
+                </PopoverContent>
+              </Popover>
             </div>
             <span className="ml-auto text-muted-foreground">
               You have <strong className="text-foreground">{activeCount}</strong> active
+              {!meetsMinimum && (
+                <span className="ml-2 text-destructive">· below minimum</span>
+              )}
+              {meetsMinimum && !meetsSuggested && (
+                <span className="ml-2 text-amber-600 dark:text-amber-400">· minimum met, recommended not yet</span>
+              )}
             </span>
           </div>
         </section>
@@ -251,23 +299,42 @@ export default function SettingsPage() {
                 className="mt-1.5"
               />
             </div>
-            <Button
-              size="lg"
-              onClick={() => generateSchedule.mutate({ year: settings.scheduleYear })}
-              disabled={generateSchedule.isPending}
-            >
-              {generateSchedule.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Generating…
-                </>
-              ) : (
-                <>
-                  <Wand2 className="h-4 w-4" />
-                  Generate Schedule
-                </>
-              )}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => rebalance.mutate({})}
+                disabled={rebalance.isPending || generateSchedule.isPending}
+              >
+                {rebalance.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Re-balancing…
+                  </>
+                ) : (
+                  <>
+                    Re-balance Pods
+                  </>
+                )}
+              </Button>
+              <Button
+                size="lg"
+                onClick={() => generateSchedule.mutate({ year: settings.scheduleYear })}
+                disabled={generateSchedule.isPending || rebalance.isPending}
+              >
+                {generateSchedule.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-4 w-4" />
+                    Generate Schedule
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </section>
 

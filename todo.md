@@ -73,3 +73,22 @@
 - [x] Add "Default engineer" pin in Settings (persisted via new defaultEngineerId column)
 - [x] Add "Show only mine" toggle on Calendar
 - [x] Color shift cards by Pod when "All engineers" is selected, by Engineer otherwise
+
+## v1.3 — Editable engineer names
+- [x] Inline rename with click-to-edit chip on Roster
+- [x] Names flow through Calendar shift cards, Balance, Pods, Settings selectors
+
+## v1.4 — Gap Report
+- [x] Dedicated Gap Report page with intervals grouped by month
+- [x] Per-pod summary cards
+- [x] CSV export
+- [x] Pure findGaps helper + 8 vitest cases
+
+## v1.5 — Time filter, calendar visual, capacity planning
+- [x] Gap Report: month-or-full-year time filter
+- [x] Gap Report: calendar visual (12 monthly heatmap grids, day-shaded by gap-hours)
+- [x] Gap Report: "Fix this gap" row action that deep-links to Calendar with day + pod pre-selected
+- [x] Calendar: honors `?date=YYYY-MM-DD&pod=N` URL params on load (sets cursor + view + pod filter)
+- [x] Settings: dynamic auto-suggested headcount per pod (factoring 48h/120h cycle + PTO + holidays) with reasoning popover
+- [x] Settings: Re-balance Pods action redistributes engineers and re-runs scheduler
+- [x] Vitest: covers headcount-suggestion math and re-balance assignment (10 new tests, 35 total passing)

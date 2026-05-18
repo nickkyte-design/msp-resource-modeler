@@ -16,12 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatHour, monthNameShort, toTzParts } from "@/lib/datetime";
+import { formatHour, monthName, monthNameShort, toTzParts } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { findGaps } from "@shared/gaps";
+import { findGaps, clipGapsToWindow } from "@shared/gaps";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
-import { AlertTriangle, CheckCircle2, Download } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Download } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 
 type Gap = {
   podNumber: number;
@@ -40,8 +41,11 @@ export default function GapReport() {
     (settings?.displayTimezone as Timezone) ?? "EDT",
   );
   const [selectedPod, setSelectedPod] = useState<number | "all">("all");
+  // Time-range filter: "all" = full year, or a 0..11 month index in the display TZ.
+  const [selectedMonth, setSelectedMonth] = useState<number | "all">("all");
 
   const allShifts = scheduleData?.shifts ?? [];
+  const [, navigate] = useLocation();
 
   // Compute contiguous gap intervals per pod (uses shared pure helper).
   const gaps = useMemo<Gap[]>(() => {
@@ -52,17 +56,32 @@ export default function GapReport() {
     return findGaps(allShifts, podCount, startUtc, totalHours);
   }, [allShifts, year, podCount]);
 
-  const visibleGaps = useMemo(
-    () =>
-      selectedPod === "all" ? gaps : gaps.filter((g) => g.podNumber === selectedPod),
-    [gaps, selectedPod],
+  // Apply pod filter first, then split each gap so it falls inside [windowStart, windowEnd]
+  // when a specific month is selected. This keeps duration math accurate for partial-month
+  // overlaps (e.g. a gap spanning Mar 31 → Apr 1 is clipped per month).
+  const windowStartMs = useMemo(
+    () => (selectedMonth === "all" ? Date.UTC(year, 0, 1) : Date.UTC(year, selectedMonth, 1)),
+    [selectedMonth, year],
   );
+  const windowEndMs = useMemo(
+    () =>
+      selectedMonth === "all"
+        ? Date.UTC(year + 1, 0, 1)
+        : Date.UTC(year, selectedMonth + 1, 1),
+    [selectedMonth, year],
+  );
+  const windowHours = Math.round((windowEndMs - windowStartMs) / 3_600_000);
+
+  const visibleGaps = useMemo(() => {
+    const podFiltered =
+      selectedPod === "all" ? gaps : gaps.filter((g) => g.podNumber === selectedPod);
+    if (selectedMonth === "all") return podFiltered;
+    return clipGapsToWindow(podFiltered, windowStartMs, windowEndMs);
+  }, [gaps, selectedPod, selectedMonth, windowStartMs, windowEndMs]);
 
   const totalGapHours = visibleGaps.reduce((acc, g) => acc + g.durationHours, 0);
-  const totalRequiredHours =
-    selectedPod === "all"
-      ? podCount * 8760 // 365 * 24
-      : 8760;
+  const podsInScope = selectedPod === "all" ? podCount : 1;
+  const totalRequiredHours = podsInScope * windowHours;
   const coveragePct =
     totalRequiredHours === 0
       ? 100
@@ -115,9 +134,25 @@ export default function GapReport() {
       <PageHeader
         eyebrow="Coverage"
         title="Gap Report"
-        description={`Every uncovered interval in ${year}, sorted earliest first. Each row is a contiguous window where a pod has no engineer on-call.`}
+        description={`Every uncovered interval${selectedMonth === "all" ? ` in ${year}` : ` in ${monthName(selectedMonth)} ${year}`}, sorted earliest first. Each row is a contiguous window where a pod has no engineer on-call.`}
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Select
+              value={selectedMonth === "all" ? "all" : String(selectedMonth)}
+              onValueChange={(v) => setSelectedMonth(v === "all" ? "all" : Number(v))}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All {year}</SelectItem>
+                {Array.from({ length: 12 }, (_, m) => (
+                  <SelectItem key={m} value={String(m)}>
+                    {monthName(m)} {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={tz} onValueChange={(v) => setTz(v as Timezone)}>
               <SelectTrigger className="w-[110px]">
                 <SelectValue />
@@ -178,15 +213,32 @@ export default function GapReport() {
           />
         </div>
 
+        {/* Calendar visual */}
+        {allShifts.length > 0 && (
+          <GapCalendar
+            gaps={visibleGaps}
+            year={year}
+            month={selectedMonth}
+            tz={tz}
+            podsInScope={podsInScope}
+            onDayClick={(month) => setSelectedMonth(month)}
+          />
+        )}
+
         {/* Per-pod summary */}
         {selectedPod === "all" && (
           <div className="card-elegant p-5">
             <h3 className="text-sm font-semibold tracking-tight mb-3">Per-pod summary</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {Array.from({ length: podCount }, (_, i) => i + 1).map((p) => {
-                const podGaps = gaps.filter((g) => g.podNumber === p);
-                const podGapHours = podGaps.reduce((a, g) => a + g.durationHours, 0);
-                const podCoverage = ((8760 - podGapHours) / 8760) * 100;
+                const podGaps = gaps
+                  .filter((g) => g.podNumber === p);
+                const podGapsClipped =
+                  selectedMonth === "all"
+                    ? podGaps
+                    : clipGapsToWindow(podGaps, windowStartMs, windowEndMs);
+                const podGapHours = podGapsClipped.reduce((a, g) => a + g.durationHours, 0);
+                const podCoverage = ((windowHours - podGapHours) / windowHours) * 100;
                 return (
                   <div
                     key={p}
@@ -197,11 +249,11 @@ export default function GapReport() {
                         Pod {p}
                       </div>
                       <div className="font-display text-2xl font-semibold tracking-tight mt-0.5">
-                        {podGaps.length === 0 ? (
+                        {podGapsClipped.length === 0 ? (
                           <span className="text-emerald-600 dark:text-emerald-400">Full</span>
                         ) : (
                           <>
-                            {podGaps.length}{" "}
+                            {podGapsClipped.length}{" "}
                             <span className="text-sm font-normal text-muted-foreground">
                               gaps · {podGapHours}h
                             </span>
@@ -259,12 +311,13 @@ export default function GapReport() {
                   <TableHead>Window</TableHead>
                   <TableHead className="w-[100px]">Duration</TableHead>
                   <TableHead className="w-[100px]">Pod</TableHead>
+                  <TableHead className="w-[80px] text-right pr-4">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {Array.from(gapsByMonth.entries()).flatMap(([month, monthGaps]) => [
                   <TableRow key={`m-${month}`} className="bg-muted/20 hover:bg-muted/20">
-                    <TableCell colSpan={5} className="py-1.5">
+                    <TableCell colSpan={6} className="py-1.5">
                       <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
                         {monthNameShort(month)} · {monthGaps.length} gap
                         {monthGaps.length === 1 ? "" : "s"} ·{" "}
@@ -320,6 +373,20 @@ export default function GapReport() {
                             Pod {g.podNumber}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-right pr-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              const dateStr = `${sp.year}-${String(sp.month + 1).padStart(2, "0")}-${String(sp.day).padStart(2, "0")}`;
+                              navigate(`/?date=${dateStr}&pod=${g.podNumber}&view=week`);
+                            }}
+                          >
+                            Fix
+                            <ArrowRight className="h-3 w-3 ml-1" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   }),
@@ -365,4 +432,169 @@ function SummaryCard({
       {subtle && <div className="text-xs text-muted-foreground mt-0.5">{subtle}</div>}
     </div>
   );
+}
+
+/**
+ * GapCalendar — calendar-style heat visual:
+ * - When `month === "all"`, renders 12 mini-month grids in a 3- or 4-column layout.
+ * - When a month is selected, renders a single full-size month grid.
+ * Each day is colored by gap-hours / (24 * podsInScope), so 0h = sage, half-day = amber,
+ * full-day blackout = red. Clicking a day focuses that month if currently viewing all.
+ */
+function GapCalendar({
+  gaps,
+  year,
+  month,
+  tz,
+  podsInScope,
+  onDayClick,
+}: {
+  gaps: { startMs: number; endMs: number; durationHours: number; podNumber: number }[];
+  year: number;
+  month: number | "all";
+  tz: Timezone;
+  podsInScope: number;
+  onDayClick: (month: number) => void;
+}) {
+  // Compute gap-hours per (year, month, day) bucket in the display TZ.
+  const dayHours = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const g of gaps) {
+      // Walk the gap hour by hour and bin into TZ-local days.
+      for (let t = g.startMs; t < g.endMs; t += 3_600_000) {
+        const p = toTzParts(t, tz);
+        if (p.year !== year) continue;
+        const key = `${p.month}-${p.day}`;
+        map.set(key, (map.get(key) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [gaps, tz, year]);
+
+  const monthsToRender = month === "all" ? Array.from({ length: 12 }, (_, m) => m) : [month];
+
+  return (
+    <div className="card-elegant p-5 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold tracking-tight">
+          {month === "all" ? `Calendar · ${year}` : `${monthName(month)} ${year}`}
+        </h3>
+        <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <span>Less</span>
+          <div className="flex items-center gap-0.5">
+            {[0, 0.1, 0.3, 0.6, 1].map((v) => (
+              <div
+                key={v}
+                className="h-3 w-3 rounded-sm border border-border/40"
+                style={{ background: dayColor(v * 24 * podsInScope, podsInScope) }}
+              />
+            ))}
+          </div>
+          <span>More gap</span>
+        </div>
+      </div>
+      <div
+        className={
+          month === "all"
+            ? "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            : "grid grid-cols-1"
+        }
+      >
+        {monthsToRender.map((m) => (
+          <MiniMonth
+            key={m}
+            year={year}
+            month={m}
+            dayHours={dayHours}
+            podsInScope={podsInScope}
+            compact={month === "all"}
+            onClick={() => {
+              if (month === "all") onDayClick(m);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MiniMonth({
+  year,
+  month,
+  dayHours,
+  podsInScope,
+  compact,
+  onClick,
+}: {
+  year: number;
+  month: number;
+  dayHours: Map<string, number>;
+  podsInScope: number;
+  compact: boolean;
+  onClick: () => void;
+}) {
+  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0=Sun..6=Sat
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const monthGapHours = Array.from({ length: daysInMonth }, (_, i) =>
+    dayHours.get(`${month}-${i + 1}`) ?? 0,
+  ).reduce((a, b) => a + b, 0);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-md border bg-muted/10 p-3 transition-colors ${
+        compact ? "hover:bg-muted/30 cursor-pointer" : "cursor-default"
+      }`}
+    >
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="text-xs font-semibold tracking-tight">
+          {monthName(month)}
+        </div>
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground tabular-nums">
+          {monthGapHours === 0 ? "Full" : `${monthGapHours}h gap`}
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-px text-[9px] text-muted-foreground mb-1">
+        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+          <div key={i} className="text-center">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} className="aspect-square" />;
+          const h = dayHours.get(`${month}-${d}`) ?? 0;
+          return (
+            <div
+              key={i}
+              className="aspect-square rounded-sm flex items-center justify-center text-[10px] font-medium tabular-nums"
+              style={{
+                background: dayColor(h, podsInScope),
+                color: h > podsInScope * 12 ? "white" : "inherit",
+              }}
+              title={`${monthName(month)} ${d} — ${h === 0 ? "full coverage" : `${h}h gap`}`}
+            >
+              {compact ? "" : d}
+            </div>
+          );
+        })}
+      </div>
+    </button>
+  );
+}
+
+/** Map gap-hours-on-this-day to a heat color, normalized by max possible gap. */
+function dayColor(gapHours: number, podsInScope: number) {
+  const maxPerDay = 24 * Math.max(1, podsInScope);
+  const t = Math.min(1, gapHours / maxPerDay);
+  if (gapHours === 0) return "oklch(0.97 0.02 150 / 0.5)";
+  if (t < 0.1) return "oklch(0.92 0.06 80 / 0.7)";
+  if (t < 0.35) return "oklch(0.82 0.13 60 / 0.85)";
+  if (t < 0.7) return "oklch(0.65 0.18 40)";
+  return "oklch(0.5 0.2 25)";
 }

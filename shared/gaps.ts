@@ -66,3 +66,30 @@ export function findGaps(
   out.sort((a, b) => a.startMs - b.startMs || a.podNumber - b.podNumber);
   return out;
 }
+
+/**
+ * Clip gap intervals to a [windowStartMs, windowEndMs) range.
+ * Gaps fully outside the window are dropped; gaps that overlap the boundary
+ * are truncated and their durationHours recomputed so that month-level totals
+ * are accurate.
+ */
+export function clipGapsToWindow(
+  gaps: GapInterval[],
+  windowStartMs: number,
+  windowEndMs: number,
+): GapInterval[] {
+  if (windowEndMs <= windowStartMs) return [];
+  const out: GapInterval[] = [];
+  for (const g of gaps) {
+    const s = Math.max(g.startMs, windowStartMs);
+    const e = Math.min(g.endMs, windowEndMs);
+    if (e <= s) continue;
+    out.push({
+      podNumber: g.podNumber,
+      startMs: s,
+      endMs: e,
+      durationHours: Math.round((e - s) / 3_600_000),
+    });
+  }
+  return out;
+}

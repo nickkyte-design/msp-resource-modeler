@@ -21,7 +21,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
 import { ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 type ViewMode = "week" | "month" | "year";
@@ -44,6 +44,34 @@ export default function CalendarPage() {
   const [selectedEngineer, setSelectedEngineer] = useState<number | "all">("all");
   const [selectedPod, setSelectedPod] = useState<number | "all">("all");
   const [showOnlyMine, setShowOnlyMine] = useState(false);
+
+  // Honor deep-link params (?date=YYYY-MM-DD&pod=N&view=week|month|year) on mount.
+  // Used by the Gap Report's "Fix this gap" action.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const dateStr = params.get("date");
+    const podStr = params.get("pod");
+    const viewStr = params.get("view");
+    if (dateStr) {
+      const [yy, mm, dd] = dateStr.split("-").map(Number);
+      if (Number.isFinite(yy) && Number.isFinite(mm) && Number.isFinite(dd)) {
+        setCursor(Date.UTC(yy, mm - 1, dd));
+      }
+    }
+    if (podStr) {
+      const n = Number(podStr);
+      if (Number.isFinite(n) && n > 0) setSelectedPod(n);
+    }
+    if (viewStr === "week" || viewStr === "month" || viewStr === "year") {
+      setView(viewStr);
+    }
+    // Clean the URL so subsequent navigation isn't re-hydrated.
+    if (dateStr || podStr || viewStr) {
+      const cleaned = window.location.pathname;
+      window.history.replaceState({}, "", cleaned);
+    }
+  }, []);
 
   const defaultEngineerId = settings?.defaultEngineerId ?? null;
   const effectiveEngineer: number | "all" =

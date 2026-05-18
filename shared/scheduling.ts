@@ -68,19 +68,77 @@ export const WEEKDAY_LABELS_FULL = [
 ];
 
 /**
- * Suggested minimum headcount per pod count.
- * Calculation rationale:
- * - Each pod needs continuous 24/7 coverage = 24 * 365 = 8760 hours/year per pod.
- * - Each engineer can work at most 45h/week => ~2340h/year, but soft target is 40h/week => 2080h/year.
- * - Plus PTO (10 days * 8h = 80h) and holidays (11 days * 8h = 88h) reduces capacity by ~168h/yr.
- * - Realistic capacity per engineer: ~1900h/year of on-call.
- * - Per pod: ceil(8760 / 1900) = 5 engineers minimum, but with rotation/preferences buffer, recommend 5/pod.
- * - Also need to satisfy 48h-off/120h-on cycle: each engineer covers 5/7 of the time at most => need ceil(7/5) = 2 minimum just for cycle, but for full balanced 24/7 coverage with 8h shifts per pod = 3 shifts/day = 21 shifts/week per pod, and each engineer does at most 5 shifts/week => need ceil(21/5) = 5 engineers/pod.
+ * Compute headcount recommendation per pod given the scheduling constraints.
+ *
+ * Two numbers are derived:
+ * - **minimumPerPod** — the floor that the cycle alone forces.
+ *   Each pod needs 21 eight-hour shifts per week (3 shifts/day × 7 days).
+ *   Each engineer works at most 5 shifts/week (the 120h-on / 48h-off cycle),
+ *   so we need at least ceil(21 / 5) = 5 engineers per pod just to satisfy the rotation.
+ * - **recommendedPerPod** — minimum plus a buffer that absorbs PTO + holidays
+ *   without leaving gaps. PTO (10) + holidays (11) = 21 missing days/year per engineer
+ *   = ~3 weeks of lost capacity. With a 5-engineer pod we need ~3/52 ≈ 6% headroom,
+ *   bumping the recommendation to 6 per pod (one floating reliever).
  */
+export interface HeadcountSuggestion {
+  minimumPerPod: number;
+  recommendedPerPod: number;
+  minimumTotal: number;
+  recommendedTotal: number;
+  reasoning: string[];
+}
+
+export function computeHeadcountSuggestion(
+  podCount: 1 | 2 | 3,
+  ptoEnabled: boolean,
+  holidaysEnabled: boolean,
+): HeadcountSuggestion {
+  // Cycle math: 21 shifts/week per pod ÷ 5 shifts/engineer/week = 4.2 → ceil = 5.
+  const shiftsPerWeekPerPod = Math.ceil(24 / PREFERRED_SHIFT_HOURS) * 7; // 21
+  const shiftsPerEngineerPerWeek = SHIFTS_PER_BLOCK; // 5 shifts in a 120h block
+  const minimumPerPod = Math.ceil(shiftsPerWeekPerPod / shiftsPerEngineerPerWeek);
+
+  // Capacity loss buffer: each engineer loses ~ptoDays + holidayDays/year ~21 weekdays.
+  // 21 days / 5 shifts-per-week ≈ 4.2 weeks of lost coverage, on a 52-week year =
+  // ~8% loss per engineer. To absorb that loss inside a pod of N, we need (1 + lossFraction) * minimum.
+  let lossFraction = 0;
+  if (ptoEnabled) lossFraction += PTO_DAYS_PER_YEAR / 52 / 5;
+  if (holidaysEnabled) lossFraction += HOLIDAY_DAYS_PER_YEAR / 52 / 5;
+
+  const recommendedPerPod = Math.ceil(minimumPerPod * (1 + lossFraction));
+
+  const reasoning: string[] = [
+    `Each pod needs ${shiftsPerWeekPerPod} eight-hour shifts per week (3 × 7 days).`,
+    `Each engineer covers at most ${shiftsPerEngineerPerWeek} shifts per week under the 48h-off / 120h-on cycle.`,
+    `Minimum just to fill the rotation: ⌈${shiftsPerWeekPerPod} ÷ ${shiftsPerEngineerPerWeek}⌉ = ${minimumPerPod} engineers per pod.`,
+  ];
+  if (ptoEnabled || holidaysEnabled) {
+    const days =
+      (ptoEnabled ? PTO_DAYS_PER_YEAR : 0) + (holidaysEnabled ? HOLIDAY_DAYS_PER_YEAR : 0);
+    reasoning.push(
+      `Add buffer for ${days} PTO/holiday days per engineer per year (≈ ${(lossFraction * 100).toFixed(0)}% capacity loss).`,
+    );
+    reasoning.push(
+      `Recommended with buffer: ⌈${minimumPerPod} × (1 + ${lossFraction.toFixed(2)})⌉ = ${recommendedPerPod} engineers per pod.`,
+    );
+  } else {
+    reasoning.push(`No PTO or holidays enabled — recommendation matches the minimum.`);
+  }
+
+  return {
+    minimumPerPod,
+    recommendedPerPod,
+    minimumTotal: minimumPerPod * podCount,
+    recommendedTotal: recommendedPerPod * podCount,
+    reasoning,
+  };
+}
+
+/** Backwards-compatible static map (recommended values for default PTO+holidays on). */
 export const SUGGESTED_HEADCOUNT_PER_POD: Record<1 | 2 | 3, number> = {
-  1: 5,
-  2: 10,
-  3: 15,
+  1: computeHeadcountSuggestion(1, true, true).recommendedPerPod,
+  2: computeHeadcountSuggestion(2, true, true).recommendedPerPod,
+  3: computeHeadcountSuggestion(3, true, true).recommendedPerPod,
 };
 
 export interface ShiftBlock {

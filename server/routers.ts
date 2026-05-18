@@ -30,6 +30,7 @@ import {
   updateSettings,
 } from "./db";
 import { assignTimeOff, generateSchedule } from "./scheduler";
+import { rebalancePods } from "../shared/rebalance";
 
 const softPrefSchema = z.object({
   weekdayOnly: z.boolean(),
@@ -117,6 +118,38 @@ export const appRouter = router({
           input.hardPreferences ?? null,
         );
         return { success: true };
+      }),
+    rebalancePods: publicProcedure
+      .input(
+        z.object({
+          gapHoursPerPod: z.record(z.string(), z.number()).optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const all = await listEngineers();
+        const settings = await getSettings();
+        const podCount = ((settings?.podCount ?? 1) as 1 | 2 | 3);
+        // The shared helper expects numeric keys but Zod records use string keys; convert.
+        const gapMap: Record<number, number> | undefined = input.gapHoursPerPod
+          ? Object.fromEntries(
+              Object.entries(input.gapHoursPerPod).map(([k, v]) => [Number(k), v]),
+            )
+          : undefined;
+        const assignments = rebalancePods(
+          all.map((e) => ({ id: e.id, active: e.active })),
+          podCount,
+          gapMap,
+        );
+        // Convert Map -> array to avoid downlevelIteration issues.
+        const entries = Array.from(assignments);
+        for (const [id, podNumber] of entries) {
+          await updateEngineer(id, { podNumber });
+        }
+        return {
+          success: true,
+          podCount,
+          assignedCount: assignments.size,
+        };
       }),
     setTeamSize: publicProcedure
       .input(z.object({ size: z.number().int().min(1).max(200) }))
