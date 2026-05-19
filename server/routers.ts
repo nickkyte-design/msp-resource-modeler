@@ -421,6 +421,34 @@ export const appRouter = router({
       }),
   }),
 
+  // ====== Time Off ======
+  timeOff: router({
+    summaryByDay: publicProcedure
+      .input(z.object({ year: z.number().int() }).optional())
+      .query(async ({ input }) => {
+        const settings = await getSettings();
+        const year = input?.year ?? settings?.scheduleYear ?? new Date().getUTCFullYear();
+        const [entries, engineers] = await Promise.all([
+          listTimeOffForYear(year),
+          listEngineers(),
+        ]);
+        const nameById = new Map<number, string>();
+        for (const e of engineers) nameById.set(e.id, e.name);
+        const byDay: Record<string, { pto: string[]; holiday: string[] }> = {};
+        for (const t of entries) {
+          const name = nameById.get(t.engineerId) ?? `#${t.engineerId}`;
+          const bucket = (byDay[t.date] ??= { pto: [], holiday: [] });
+          const target = t.kind.toUpperCase() === "HOLIDAY" ? bucket.holiday : bucket.pto;
+          if (!target.includes(name)) target.push(name);
+        }
+        for (const day of Object.keys(byDay)) {
+          byDay[day].pto.sort();
+          byDay[day].holiday.sort();
+        }
+        return { year, byDay };
+      }),
+  }),
+
   ai: router({
     ask: publicProcedure
       .input(

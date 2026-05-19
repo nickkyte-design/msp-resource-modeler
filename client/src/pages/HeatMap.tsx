@@ -192,6 +192,14 @@ export default function HeatMap() {
               </div>
             ))}
           </div>
+          <span className="hidden md:inline-flex items-center gap-3 pl-3 ml-3 border-l border-border/60">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500" /> PTO
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-violet-500" /> Holiday
+            </span>
+          </span>
           <Badge variant="outline" className="ml-auto">
             {tz}
           </Badge>

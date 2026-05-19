@@ -222,13 +222,23 @@ export default function CalendarPage() {
 
       <div className="px-6 lg:px-10 py-6 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-5">
-          <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
-            <TabsList>
-              <TabsTrigger value="week">Weekly</TabsTrigger>
-              <TabsTrigger value="month">Monthly</TabsTrigger>
-              <TabsTrigger value="year">Yearly</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-4">
+            <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
+              <TabsList>
+                <TabsTrigger value="week">Weekly</TabsTrigger>
+                <TabsTrigger value="month">Monthly</TabsTrigger>
+                <TabsTrigger value="year">Yearly</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-amber-500" /> PTO
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-violet-500" /> Holiday
+              </span>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"

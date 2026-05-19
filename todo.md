@@ -129,10 +129,10 @@
 
 ## v1.10 — PTO/Holiday dots
 
-- [ ] Backend: `timeOff.summaryByDay` tRPC procedure returning per-day { pto: string[], holiday: string[] }
-- [ ] Shared helper `groupTimeOffByDay` (pure, testable) for grouping shifts
-- [ ] Calendar (Weekly + Monthly) day-headers: PTO/Holiday dot row with tooltip listing engineer names
-- [ ] Heat Map Year view: thin dot strip above the day-grid columns
-- [ ] Heat Map Month view: small PTO/Holiday dots inside each day cell
-- [ ] Legend chip in both pages explaining the dot colors
-- [ ] Vitest: groupTimeOffByDay correctness, including duplicate-day collapse
+- [x] Backend: `timeOff.summaryByDay` tRPC procedure returning per-day `{ pto: string[], holiday: string[] }`
+- [x] Shared helper `groupTimeOffByDay` (pure, testable) in `shared/timeOff.ts`
+- [x] Calendar (Weekly + Monthly) day-headers: `DayOffIndicator` with amber/violet dots + tooltip listing engineer names
+- [x] Heat Map Year view: PTO/Holiday off-strip above the day grid (amber/violet, gradient when both)
+- [x] Heat Map Month view: small PTO/Holiday dots in each day cell top-right corner
+- [x] Legend chip on Calendar header + Heat Map header + Heat Map Month view (PTO amber / Holiday violet)
+- [x] Vitest: `groupTimeOffByDay` correctness + dedupe + sort (7 new tests, 77 total passing)
