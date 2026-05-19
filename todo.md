@@ -116,3 +116,13 @@
 - [x] Bulk rename engineers via CSV upload (file picker, preview dialog, apply mutation)
 - [x] App version constant (v1.8) surfaced in sidebar (`APP_VERSION` shared constant + footer pill)
 - [x] Vitest: timezone catalog + APP_VERSION (5 new tests, 52 total passing)
+
+## v1.9 — Ask AI agent + Heat Map month view
+
+- [ ] Backend `ai.ask` tRPC procedure: builds compact schedule context (engineer count, pod count, totals, gap hours, top gaps, per-pod summary) and forwards to `invokeLLM`
+- [ ] Frontend Ask AI drawer (Sheet) with message history, markdown rendering, send-on-Enter, prompt suggestions
+- [ ] Sidebar "Ask AI" entry that opens the drawer (always available)
+- [ ] Heat Map: Month view tab with 7-col weeks-of-month grid; each cell shows day-of-month + gap-hours; colored by gap severity
+- [ ] Heat Map: month picker (prev/next + month name)
+- [ ] Click a Month-view day to open the existing DayScheduleDrawer (reuse v1.7 component)
+- [ ] Vitest: ai context builder returns expected shape; month-grid helper returns 6-week alignment

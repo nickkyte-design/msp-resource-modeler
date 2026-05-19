@@ -11,6 +11,8 @@ import { isoDateKey, monthName, toTzParts } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
 import { useMemo, useState } from "react";
+import DayScheduleDrawer from "@/components/DayScheduleDrawer";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function HeatMap() {
   const { data: settings } = trpc.settings.get.useQuery();
@@ -20,6 +22,12 @@ export default function HeatMap() {
     (settings?.displayTimezone as Timezone) ?? "EDT",
   );
   const [selectedPod, setSelectedPod] = useState<number | "all">("all");
+  const [viewMode, setViewMode] = useState<"year" | "month">("year");
+  const [monthIndex, setMonthIndex] = useState<number>(new Date().getUTCMonth());
+  // Day-drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerDate, setDrawerDate] = useState<string | null>(null);
+  const [drawerPod, setDrawerPod] = useState<number>(1);
 
   const allShifts = scheduleData?.shifts ?? [];
   const podCount = settings?.podCount ?? 1;
@@ -77,6 +85,22 @@ export default function HeatMap() {
         description={`Hourly coverage density for ${year}. Each cell shows how many engineers are on-call. Gaps (cells below required pod count) indicate uncovered hours.`}
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("year")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${viewMode === "year" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Year
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("month")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${viewMode === "month" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Month
+              </button>
+            </div>
             <Select value={tz} onValueChange={(v) => setTz(v as Timezone)}>
               <SelectTrigger className="w-[110px]">
                 <SelectValue />
@@ -153,12 +177,185 @@ export default function HeatMap() {
         </div>
 
         {/* Heat map grid */}
-        <div className="card-elegant p-5 overflow-auto">
-          <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} />
+        {viewMode === "year" ? (
+          <div className="card-elegant p-5 overflow-auto">
+            <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} />
+          </div>
+        ) : (
+          <div className="card-elegant p-5">
+            <MonthHeader
+              year={year}
+              monthIndex={monthIndex}
+              onPrev={() => setMonthIndex((m) => (m + 11) % 12)}
+              onNext={() => setMonthIndex((m) => (m + 1) % 12)}
+            />
+            <MonthGapGrid
+              heatmap={heatmap}
+              year={year}
+              monthIndex={monthIndex}
+              requiredCoverage={requiredCoverage}
+              onDayClick={(dateStr) => {
+                setDrawerDate(dateStr);
+                setDrawerPod(selectedPod === "all" ? 1 : selectedPod);
+                setDrawerOpen(true);
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <DayScheduleDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        dateStr={drawerDate}
+        initialPod={drawerPod}
+        podCount={podCount}
+        tz={tz}
+        year={year}
+      />
+    </div>
+  );
+}
+
+function MonthHeader({
+  year,
+  monthIndex,
+  onPrev,
+  onNext,
+}: {
+  year: number;
+  monthIndex: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <button
+        onClick={onPrev}
+        className="h-8 w-8 inline-flex items-center justify-center rounded-md border bg-card hover:bg-accent transition-colors"
+        aria-label="Previous month"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <div className="font-display text-xl font-semibold tracking-tight">
+        {monthName(monthIndex)} {year}
+      </div>
+      <button
+        onClick={onNext}
+        className="h-8 w-8 inline-flex items-center justify-center rounded-md border bg-card hover:bg-accent transition-colors"
+        aria-label="Next month"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function MonthGapGrid({
+  heatmap,
+  year,
+  monthIndex,
+  requiredCoverage,
+  onDayClick,
+}: {
+  heatmap: { grid: number[][]; totalDays: number; startUtc: number };
+  year: number;
+  monthIndex: number;
+  requiredCoverage: number;
+  onDayClick: (dateStr: string) => void;
+}) {
+  const monthStart = Date.UTC(year, monthIndex, 1);
+  const monthEnd = Date.UTC(year, monthIndex + 1, 1);
+  const daysInMonth = Math.round((monthEnd - monthStart) / 86_400_000);
+  const firstWeekday = new Date(monthStart).getUTCDay(); // 0 = Sun
+
+  // Compute per-day gap-hour totals
+  const dayGaps: number[] = [];
+  for (let d = 0; d < daysInMonth; d++) {
+    const dayIdx = Math.round((Date.UTC(year, monthIndex, d + 1) - heatmap.startUtc) / 86_400_000);
+    let gap = 0;
+    if (dayIdx >= 0 && dayIdx < heatmap.totalDays) {
+      for (let h = 0; h < 24; h++) {
+        const cov = heatmap.grid[dayIdx][h];
+        if (cov < requiredCoverage) gap += requiredCoverage - cov;
+      }
+    }
+    dayGaps.push(gap);
+  }
+  const maxGap = Math.max(1, ...dayGaps);
+
+  const cells: Array<{ kind: "blank" } | { kind: "day"; day: number; gap: number }> = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push({ kind: "blank" });
+  for (let d = 0; d < daysInMonth; d++) cells.push({ kind: "day", day: d + 1, gap: dayGaps[d] });
+  while (cells.length % 7 !== 0) cells.push({ kind: "blank" });
+
+  const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1.5 mb-2">
+        {weekdayLabels.map((w) => (
+          <div
+            key={w}
+            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground text-center"
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((c, idx) => {
+          if (c.kind === "blank") return <div key={idx} />;
+          const dateStr = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
+          const bg = gapCellColor(c.gap, maxGap);
+          const isFullyCovered = c.gap === 0;
+          return (
+            <button
+              key={idx}
+              onClick={() => onDayClick(dateStr)}
+              className="group relative rounded-md border border-border/40 hover:border-primary/60 hover:shadow-sm transition-all aspect-square flex flex-col items-center justify-center text-center px-2"
+              style={{ background: bg }}
+              title={`${dateStr} — ${c.gap}h gap`}
+            >
+              <span
+                className={`font-display text-base font-semibold ${isFullyCovered ? "text-foreground/80" : "text-white"}`}
+              >
+                {c.day}
+              </span>
+              <span
+                className={`text-[10px] mt-0.5 ${isFullyCovered ? "text-muted-foreground" : "text-white/90"}`}
+              >
+                {c.gap === 0 ? "covered" : `${c.gap}h gap`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Gap intensity</span>
+        <div className="inline-flex items-center gap-1">
+          {[0, 0.25, 0.5, 0.75, 1].map((p) => (
+            <div
+              key={p}
+              className="h-3 w-6 rounded-sm border border-border/40"
+              style={{ background: gapCellColor(Math.round(p * maxGap), maxGap) }}
+            />
+          ))}
         </div>
+        <span className="ml-1">0 → {maxGap}h</span>
       </div>
     </div>
   );
+}
+
+function gapCellColor(gap: number, maxGap: number) {
+  if (gap === 0) return "oklch(0.95 0.02 150 / 0.5)"; // pale green tint
+  const t = Math.min(1, gap / maxGap);
+  // amber (low) -> red (high)
+  const lightness = 0.68 - 0.18 * t; // 0.68 -> 0.50
+  const chroma = 0.14 + 0.08 * t; // 0.14 -> 0.22
+  const hue = 60 - 40 * t; // 60 (amber) -> 20 (red)
+  return `oklch(${lightness.toFixed(2)} ${chroma.toFixed(2)} ${hue.toFixed(0)})`;
 }
 
 function SummaryCard({

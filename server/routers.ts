@@ -36,6 +36,8 @@ import {
 } from "./db";
 import { assignTimeOff, generateSchedule } from "./scheduler";
 import { rebalancePods } from "../shared/rebalance";
+import { invokeLLM } from "./_core/llm";
+import { AI_SYSTEM_PROMPT, buildAiContext, renderContextMarkdown } from "./ai";
 
 const softPrefSchema = z.object({
   weekdayOnly: z.boolean(),
@@ -416,6 +418,39 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteShift(input.id);
         return { success: true };
+      }),
+  }),
+
+  ai: router({
+    ask: publicProcedure
+      .input(
+        z.object({
+          year: z.number().int(),
+          history: z
+            .array(
+              z.object({
+                role: z.enum(["user", "assistant"]),
+                content: z.string().max(4000),
+              }),
+            )
+            .max(20)
+            .default([]),
+          question: z.string().min(1).max(2000),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ctx = await buildAiContext(input.year);
+        const contextMd = renderContextMarkdown(ctx);
+        const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+          { role: "system", content: AI_SYSTEM_PROMPT },
+          { role: "system", content: `SCHEDULE CONTEXT (year ${input.year}):\n${contextMd}` },
+          ...input.history.map((h) => ({ role: h.role, content: h.content })),
+          { role: "user", content: input.question },
+        ];
+        const result = await invokeLLM({ messages });
+        const raw = result.choices[0]?.message?.content;
+        const answer = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.map((p: { type: string; text?: string }) => (p.type === "text" ? p.text ?? "" : "")).join("") : "";
+        return { answer, context: ctx };
       }),
   }),
 });

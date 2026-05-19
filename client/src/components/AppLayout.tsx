@@ -20,9 +20,12 @@ import {
   MapPin,
   Scale,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { useState } from "react";
+import AskAiDrawer from "./AskAiDrawer";
 
 const menuItems = [
   { icon: CalendarDays, label: "Calendar", path: "/" },
@@ -46,6 +49,8 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const isMobile = useIsMobile();
   const activeItem = menuItems.find((m) => m.path === location);
+  const [askOpen, setAskOpen] = useState(false);
+  const currentYear = new Date().getUTCFullYear();
 
   return (
     <>
@@ -88,6 +93,16 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
                 </SidebarMenuItem>
               );
             })}
+            <SidebarMenuItem className="mt-2">
+              <SidebarMenuButton
+                tooltip="Ask AI"
+                onClick={() => setAskOpen(true)}
+                className="h-10 font-medium text-primary hover:text-primary"
+              >
+                <Sparkles className="h-4 w-4" strokeWidth={2.25} />
+                <span>Ask AI</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border/40 px-3 py-2.5 group-data-[collapsible=icon]:px-1.5">
@@ -117,6 +132,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         )}
         <main className="flex-1">{children}</main>
       </SidebarInset>
+      <AskAiDrawer open={askOpen} onOpenChange={setAskOpen} year={currentYear} />
     </>
   );
 }
