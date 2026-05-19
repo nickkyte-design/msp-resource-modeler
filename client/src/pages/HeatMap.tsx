@@ -13,6 +13,7 @@ import { TIMEZONES, type Timezone } from "@shared/scheduling";
 import { useMemo, useState } from "react";
 import DayScheduleDrawer from "@/components/DayScheduleDrawer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { buildMonthGrid, computeMonthGaps } from "@shared/monthGrid";
 
 export default function HeatMap() {
   const { data: settings } = trpc.settings.get.useQuery();
@@ -264,30 +265,15 @@ function MonthGapGrid({
   requiredCoverage: number;
   onDayClick: (dateStr: string) => void;
 }) {
-  const monthStart = Date.UTC(year, monthIndex, 1);
-  const monthEnd = Date.UTC(year, monthIndex + 1, 1);
-  const daysInMonth = Math.round((monthEnd - monthStart) / 86_400_000);
-  const firstWeekday = new Date(monthStart).getUTCDay(); // 0 = Sun
-
-  // Compute per-day gap-hour totals
-  const dayGaps: number[] = [];
-  for (let d = 0; d < daysInMonth; d++) {
-    const dayIdx = Math.round((Date.UTC(year, monthIndex, d + 1) - heatmap.startUtc) / 86_400_000);
-    let gap = 0;
-    if (dayIdx >= 0 && dayIdx < heatmap.totalDays) {
-      for (let h = 0; h < 24; h++) {
-        const cov = heatmap.grid[dayIdx][h];
-        if (cov < requiredCoverage) gap += requiredCoverage - cov;
-      }
-    }
-    dayGaps.push(gap);
-  }
-  const maxGap = Math.max(1, ...dayGaps);
-
-  const cells: Array<{ kind: "blank" } | { kind: "day"; day: number; gap: number }> = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push({ kind: "blank" });
-  for (let d = 0; d < daysInMonth; d++) cells.push({ kind: "day", day: d + 1, gap: dayGaps[d] });
-  while (cells.length % 7 !== 0) cells.push({ kind: "blank" });
+  const dayGaps = computeMonthGaps(
+    heatmap.grid,
+    heatmap.totalDays,
+    heatmap.startUtc,
+    year,
+    monthIndex,
+    requiredCoverage,
+  );
+  const { cells, maxGap } = buildMonthGrid(year, monthIndex, dayGaps);
 
   const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -306,7 +292,7 @@ function MonthGapGrid({
       <div className="grid grid-cols-7 gap-1.5">
         {cells.map((c, idx) => {
           if (c.kind === "blank") return <div key={idx} />;
-          const dateStr = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
+          const dateStr = c.dateStr;
           const bg = gapCellColor(c.gap, maxGap);
           const isFullyCovered = c.gap === 0;
           return (
