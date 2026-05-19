@@ -193,11 +193,34 @@ export default function DayScheduleDrawer({
                       {arr.map((covered, h) => (
                         <div
                           key={h}
-                          className={covered ? "bg-emerald-500/70" : ""}
+                          className={covered ? "bg-emerald-500/30" : ""}
                           title={`${formatHour(h)} — ${covered ? "covered" : "GAP"}`}
                         />
                       ))}
                     </div>
+                    {/* Per-engineer colored ribbon segments */}
+                    {podShifts.map((s) => {
+                      const eng = engineerById.get(s.engineerId);
+                      const color = eng?.avatarColor ?? "#c79545";
+                      const startMs = Math.max(s.startMs, dayStartMs);
+                      const endMs = Math.min(s.startMs + s.durationHours * 60 * 60 * 1000, dayEndMs);
+                      const leftPct = ((startMs - dayStartMs) / (24 * 3_600_000)) * 100;
+                      const widthPct = ((endMs - startMs) / (24 * 3_600_000)) * 100;
+                      if (widthPct <= 0) return null;
+                      return (
+                        <div
+                          key={s.id}
+                          className="absolute top-0 bottom-0 rounded-sm border border-white/30"
+                          style={{
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                            backgroundColor: color,
+                            opacity: 0.9,
+                          }}
+                          title={`${eng?.name ?? `#${s.engineerId}`}${s.manualOverride ? " (override)" : ""}`}
+                        />
+                      );
+                    })}
                     {/* Hour ticks at 0/6/12/18/24 */}
                     <div className="absolute inset-x-0 bottom-0 grid text-[8px] text-white/80 px-1" style={{ gridTemplateColumns: "repeat(24, 1fr)" }}>
                       {[0, 6, 12, 18].map((h) => (
@@ -223,6 +246,11 @@ export default function DayScheduleDrawer({
                             className="flex items-center justify-between rounded-sm border bg-muted/20 px-2 py-1"
                           >
                             <div className="flex items-center gap-2 text-sm">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full shrink-0 inline-block"
+                                style={{ backgroundColor: eng?.avatarColor ?? "#c79545" }}
+                                aria-hidden
+                              />
                               <span className="font-medium">{eng?.name ?? `#${s.engineerId}`}</span>
                               <span className="text-muted-foreground tabular-nums text-xs">
                                 {formatHour(startHourLocal)} → {formatHour(endHourLocal % 24)} · {s.durationHours}h

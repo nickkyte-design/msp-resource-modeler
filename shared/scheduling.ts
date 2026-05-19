@@ -3,7 +3,10 @@
  * Used by both server (engine) and client (display).
  */
 
-export const TIMEZONES = ["EDT", "PDT", "SGT", "BST"] as const;
+/** App version surfaced in the UI; bumped each release. */
+export const APP_VERSION = "1.8.0";
+
+export const TIMEZONES = ["EDT", "PDT", "SGT", "BST", "IST"] as const;
 export type Timezone = (typeof TIMEZONES)[number];
 
 /** UTC offset in hours for each timezone code (approximate, suitable for scheduling display). */
@@ -12,6 +15,7 @@ export const TIMEZONE_OFFSETS: Record<Timezone, number> = {
   PDT: -7, // Pacific Daylight Time
   SGT: 8, // Singapore (no DST)
   BST: 1, // British Summer Time (DST)
+  IST: 5.5, // India Standard Time (no DST, half-hour offset)
 };
 
 export const DEFAULT_LOCATIONS = ["NLH", "LCO", "QNO", "VNA", "LAL", "VLL"] as const;

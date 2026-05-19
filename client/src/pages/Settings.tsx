@@ -222,7 +222,7 @@ export default function SettingsPage() {
               Calendar views render shift times in this timezone.
             </p>
           </header>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {TIMEZONES.map((tz) => (
               <button
                 key={tz}

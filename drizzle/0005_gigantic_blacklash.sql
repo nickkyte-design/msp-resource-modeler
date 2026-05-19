@@ -1,0 +1,1 @@
+ALTER TABLE `engineers` ADD `avatarColor` varchar(16) DEFAULT '#c79545' NOT NULL;

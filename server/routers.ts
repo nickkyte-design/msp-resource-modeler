@@ -46,7 +46,7 @@ const hardPrefSchema = z.object({
   forbiddenWeekdays: z.array(z.number().int().min(0).max(6)),
 });
 
-const timezoneSchema = z.enum(["EDT", "PDT", "SGT", "BST"]);
+const timezoneSchema = z.enum(["EDT", "PDT", "SGT", "BST", "IST"]);
 
 export const appRouter = router({
   system: systemRouter,
@@ -96,11 +96,37 @@ export const appRouter = router({
           active: z.boolean().optional(),
           softPreferences: softPrefSchema.optional(),
           hardPreferences: hardPrefSchema.optional(),
+          avatarColor: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/, "Must be a #RRGGBB hex color")
+            .optional(),
         }),
       )
       .mutation(async ({ input }) => {
         const { id, ...patch } = input;
         return updateEngineer(id, patch);
+      }),
+    bulkRename: publicProcedure
+      .input(
+        z.object({
+          renames: z
+            .array(
+              z.object({
+                id: z.number().int(),
+                name: z.string().min(1).max(64),
+              }),
+            )
+            .min(1)
+            .max(500),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        let updated = 0;
+        for (const r of input.renames) {
+          await updateEngineer(r.id, { name: r.name });
+          updated += 1;
+        }
+        return { success: true, updated };
       }),
     delete: publicProcedure
       .input(z.object({ id: z.number().int() }))

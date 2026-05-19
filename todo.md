@@ -98,10 +98,21 @@
 - [x] Reasoning popover updated; tests adjusted (43 total passing)
 
 ## v1.7 — Click-to-fix gap workflow
-- [ ] Add `manualOverride` boolean column to shifts table (migration)
-- [ ] Add tRPC procedures: `shifts.listForDay`, `shifts.createOverride`, `shifts.deleteOverride`
-- [ ] Build `DayScheduleDrawer` component with per-pod 24h timeline, gap highlights, and add-shift form
-- [ ] Make Gap Report calendar day cells clickable → open the drawer with that day + pod pre-selected
-- [ ] Make Gap Report month tile (in All-Year mode) clickable → switch to that month
-- [ ] Scheduler preserves `manualOverride = 1` shifts on re-generation
-- [ ] Vitest: override persistence + gap-after-override math (≥ 4 new tests)
+- [x] Added `manualOverride` boolean column to shifts table (migration 0004)
+- [x] Added tRPC procedures: `shifts.listForDay`, `shifts.createOverride`, `shifts.deleteOverride`
+- [x] Built `DayScheduleDrawer` component with per-pod 24h timeline, gap highlights, add-shift form, and override delete buttons
+- [x] Gap Report calendar day cells clickable → opens drawer with the day + selected pod
+- [x] Gap Report month tile (All-Year mode) clickable → narrows time-range to that month
+- [x] Scheduler preserves `manualOverride = 1` shifts on re-generation; cap-aware via `existingShifts` input
+- [x] Vitest: override persistence + gap-after-override math + cap accounting (3 new tests, 46 total passing)
+
+## v1.8 — IST timezone, avatar colors, bulk CSV rename, version surface
+
+- [x] Add IST (India Standard Time, UTC+5:30) to TIMEZONE_OFFSETS and TimezoneCode union
+- [x] Update Calendar / Heat Map / Gap Report / DayScheduleDrawer / Settings timezone selectors to include IST
+- [x] Add `avatarColor` column to engineers table (migration 0005)
+- [x] Avatar color picker per engineer on Roster page
+- [x] Engineer color propagates to Calendar shift cards, Balance avatars, DayScheduleDrawer timeline
+- [x] Bulk rename engineers via CSV upload (file picker, preview dialog, apply mutation)
+- [x] App version constant (v1.8) surfaced in sidebar (`APP_VERSION` shared constant + footer pill)
+- [x] Vitest: timezone catalog + APP_VERSION (5 new tests, 52 total passing)

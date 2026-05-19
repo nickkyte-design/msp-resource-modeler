@@ -1,6 +1,7 @@
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -9,6 +10,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { APP_VERSION } from "@shared/scheduling";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   AlertTriangle,
@@ -88,6 +90,19 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
             })}
           </SidebarMenu>
         </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border/40 px-3 py-2.5 group-data-[collapsible=icon]:px-1.5">
+          <div className="flex items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-1">
+            <span className="text-[10px] uppercase tracking-[0.16em] text-sidebar-foreground/45 group-data-[collapsible=icon]:hidden">
+              Version
+            </span>
+            <span
+              className="inline-flex items-center rounded-full border border-sidebar-border/60 bg-sidebar-accent/30 px-2 py-0.5 text-[10px] font-mono font-medium tracking-wide text-sidebar-foreground/85"
+              title={`MSP Resource Modeler v${APP_VERSION}`}
+            >
+              v{APP_VERSION}
+            </span>
+          </div>
+        </SidebarFooter>
       </Sidebar>
       <SidebarInset>
         {isMobile && (

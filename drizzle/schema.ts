@@ -26,7 +26,7 @@ export const engineers = mysqlTable("engineers", {
   id: int("id").autoincrement().primaryKey(),
   /** Display label, defaults to a numeric string like "1", "2", ... */
   name: varchar("name", { length: 64 }).notNull(),
-  /** Timezone code: EDT | PDT | SGT | BST */
+  /** Timezone code: EDT | PDT | SGT | BST | IST */
   timezone: varchar("timezone", { length: 8 }).notNull().default("EDT"),
   /** Currently assigned pod number (1, 2, or 3). NULL = unassigned. */
   podNumber: int("podNumber"),
@@ -44,6 +44,8 @@ export const engineers = mysqlTable("engineers", {
   hardPreferences: json("hardPreferences"),
   /** Sort order in the roster. */
   sortOrder: int("sortOrder").notNull().default(0),
+  /** Hex color (e.g. #f5a623) used for avatar dots and shift card accents. */
+  avatarColor: varchar("avatarColor", { length: 16 }).notNull().default("#c79545"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -151,7 +151,10 @@ export default function Balance() {
               const deviation = expected > 0 ? ((total - expected) / expected) * 100 : 0;
               return (
                 <div key={e.id} className="flex items-center gap-4 px-5 py-3">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm shrink-0">
+                  <div
+                    className="h-8 w-8 rounded-full text-white flex items-center justify-center font-semibold text-sm shrink-0 shadow-sm"
+                    style={{ backgroundColor: e.avatarColor ?? "#c79545" }}
+                  >
                     {e.name}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -229,7 +232,10 @@ export default function Balance() {
                   <tr key={e.id} className="border-b hover:bg-muted/20">
                     <td className="text-sm font-medium px-3 py-2 sticky left-0 bg-card z-10">
                       <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
+                        <div
+                          className="h-6 w-6 rounded-full text-white flex items-center justify-center text-xs font-semibold"
+                          style={{ backgroundColor: e.avatarColor ?? "#c79545" }}
+                        >
                           {e.name}
                         </div>
                       </div>

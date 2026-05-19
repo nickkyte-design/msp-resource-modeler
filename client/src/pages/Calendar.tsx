@@ -112,27 +112,12 @@ export default function CalendarPage() {
     3: "oklch(0.55 0.13 155)", // deep teal
   };
 
-  // Engineer color mapping for visual distinction
+  // Engineer color mapping — honor each engineer's saved avatarColor when present.
   const engineerColorByEngineer = useMemo(() => {
     const m = new Map<number, string>();
-    const palette = [
-      "oklch(0.6 0.12 80)",
-      "oklch(0.55 0.08 200)",
-      "oklch(0.55 0.08 150)",
-      "oklch(0.6 0.1 30)",
-      "oklch(0.5 0.1 280)",
-      "oklch(0.55 0.12 130)",
-      "oklch(0.6 0.1 0)",
-      "oklch(0.5 0.08 240)",
-      "oklch(0.6 0.12 50)",
-      "oklch(0.5 0.1 180)",
-      "oklch(0.55 0.1 320)",
-      "oklch(0.55 0.12 100)",
-      "oklch(0.6 0.08 270)",
-      "oklch(0.5 0.1 60)",
-      "oklch(0.55 0.1 220)",
-    ];
-    engineers.forEach((e, i) => m.set(e.id, palette[i % palette.length]));
+    engineers.forEach((e) => {
+      m.set(e.id, e.avatarColor ?? "#c79545");
+    });
     return m;
   }, [engineers]);
 

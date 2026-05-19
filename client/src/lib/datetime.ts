@@ -29,7 +29,7 @@ export function formatTime24(h: number, m = 0) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Format a UTC ms in a given timezone as "Mon, Jan 5 · 08:00". */
+/** Format a UTC ms in a given timezone as "Mon, Jan 5 · 08:00" (or 08:30 for half-hour zones like IST). */
 export function formatShiftStart(utcMs: number, tz: Timezone) {
   const p = toTzParts(utcMs, tz);
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -47,7 +47,7 @@ export function formatShiftStart(utcMs: number, tz: Timezone) {
     "Nov",
     "Dec",
   ];
-  return `${days[p.dayOfWeek]}, ${months[p.month]} ${p.day} · ${formatTime24(p.hour)}`;
+  return `${days[p.dayOfWeek]}, ${months[p.month]} ${p.day} · ${formatTime24(p.hour, p.minute)}`;
 }
 
 /** Get the start (Monday 00:00 UTC) of the ISO week containing date. */

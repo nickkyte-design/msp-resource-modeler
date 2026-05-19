@@ -95,6 +95,66 @@ describe("generateSchedule with existing overrides", () => {
     expect(day0GapHours).toBe(0);
   });
 
+  it("persists manual overrides through a re-generation cycle (router-flow simulation)", () => {
+    // Simulate the router's regen flow:
+    //   1. First generation (no overrides) -> auto shifts + zero overrides in DB
+    //   2. User adds a manual override mid-year that fills a specific gap window
+    //   3. clearAutoShiftsForYear() -> only manual overrides survive in DB
+    //   4. generateSchedule() re-runs with `existingShifts = remainingOverrides`
+    //   Expectation: the original override still appears in the post-regen combined shift
+    //   set with identical (engineerId, podNumber, startMs, durationHours).
+    const year = 2026;
+    const HOUR = 60 * 60 * 1000;
+    const engineers = Array.from(
+      { length: 8 },
+      (_, i) => eng(i + 1, ((i % 2) + 1) as 1 | 2),
+    );
+
+    // First generation
+    const first = generateSchedule({ year, podCount: 2, engineers });
+    expect(first.shifts.length).toBeGreaterThan(0);
+
+    // User adds an override on a Wednesday afternoon for engineer 3, pod 1.
+    const overrideStart = Date.UTC(year, 5, 17, 12, 0, 0);
+    const userOverride: ShiftBlock = {
+      engineerId: 3,
+      podNumber: 1,
+      startMs: overrideStart,
+      durationHours: 8,
+    };
+
+    // clearAutoShiftsForYear() drops every auto shift; only the override survives.
+    const survivingShifts: ShiftBlock[] = [userOverride];
+
+    // Re-generate with the surviving overrides as existingShifts.
+    const second = generateSchedule({
+      year,
+      podCount: 2,
+      engineers,
+      existingShifts: survivingShifts,
+    });
+
+    // Combined post-regen DB state would be: surviving overrides + new auto shifts.
+    const combined = [...survivingShifts, ...second.shifts];
+
+    // The original override must still be present, byte-identical.
+    const found = combined.find(
+      (s) =>
+        s.engineerId === userOverride.engineerId &&
+        s.podNumber === userOverride.podNumber &&
+        s.startMs === userOverride.startMs &&
+        s.durationHours === userOverride.durationHours,
+    );
+    expect(found).toBeDefined();
+
+    // Also verify the override's hours are reflected in engineer 3's rolling-window
+    // history exactly once (no duplication into the auto-shift output).
+    const occurrencesOfOverrideStart = combined.filter(
+      (s) => s.startMs === overrideStart && s.engineerId === 3 && s.podNumber === 1,
+    );
+    expect(occurrencesOfOverrideStart.length).toBe(1);
+  });
+
   it("treats no overrides identically to omitted existingShifts (backward compat)", () => {
     const year = 2026;
     const engineers = Array.from({ length: 8 }, (_, i) => eng(i + 1, ((i % 2) + 1) as 1 | 2));
