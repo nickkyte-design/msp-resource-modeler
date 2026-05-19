@@ -126,3 +126,13 @@
 - [x] Heat Map: month picker (prev/next + month name)
 - [x] Click a Month-view day to open the existing DayScheduleDrawer (reuse v1.7 component)
 - [x] Vitest: ai context builder (db-mocked) + monthGrid helper 6-week alignment (13 new tests, 70 total passing)
+
+## v1.10 — PTO/Holiday dots
+
+- [ ] Backend: `timeOff.summaryByDay` tRPC procedure returning per-day { pto: string[], holiday: string[] }
+- [ ] Shared helper `groupTimeOffByDay` (pure, testable) for grouping shifts
+- [ ] Calendar (Weekly + Monthly) day-headers: PTO/Holiday dot row with tooltip listing engineer names
+- [ ] Heat Map Year view: thin dot strip above the day-grid columns
+- [ ] Heat Map Month view: small PTO/Holiday dots inside each day cell
+- [ ] Legend chip in both pages explaining the dot colors
+- [ ] Vitest: groupTimeOffByDay correctness, including duplicate-day collapse

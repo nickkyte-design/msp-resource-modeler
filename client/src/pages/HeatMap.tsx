@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import DayScheduleDrawer from "@/components/DayScheduleDrawer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buildMonthGrid, computeMonthGaps } from "@shared/monthGrid";
+import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
 
 export default function HeatMap() {
   const { data: settings } = trpc.settings.get.useQuery();
@@ -31,6 +32,25 @@ export default function HeatMap() {
   const [drawerPod, setDrawerPod] = useState<number>(1);
 
   const allShifts = scheduleData?.shifts ?? [];
+  const allTimeOff = scheduleData?.timeOff ?? [];
+  const { data: engineers = [] } = trpc.engineers.list.useQuery();
+  const engineerNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const e of engineers) m.set(e.id, e.name);
+    return m;
+  }, [engineers]);
+  const timeOffByDay: TimeOffByDay = useMemo(
+    () =>
+      groupTimeOffByDay(
+        allTimeOff.map((t) => ({
+          engineerId: t.engineerId,
+          engineerName: engineerNameById.get(t.engineerId) ?? `#${t.engineerId}`,
+          kind: t.kind,
+          date: t.date,
+        })),
+      ),
+    [allTimeOff, engineerNameById],
+  );
   const podCount = settings?.podCount ?? 1;
   const shifts = useMemo(
     () => (selectedPod === "all" ? allShifts : allShifts.filter((s) => s.podNumber === selectedPod)),
@@ -180,7 +200,7 @@ export default function HeatMap() {
         {/* Heat map grid */}
         {viewMode === "year" ? (
           <div className="card-elegant p-5 overflow-auto">
-            <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} />
+            <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} timeOffByDay={timeOffByDay} />
           </div>
         ) : (
           <div className="card-elegant p-5">
@@ -195,6 +215,7 @@ export default function HeatMap() {
               year={year}
               monthIndex={monthIndex}
               requiredCoverage={requiredCoverage}
+              timeOffByDay={timeOffByDay}
               onDayClick={(dateStr) => {
                 setDrawerDate(dateStr);
                 setDrawerPod(selectedPod === "all" ? 1 : selectedPod);
@@ -257,12 +278,14 @@ function MonthGapGrid({
   year,
   monthIndex,
   requiredCoverage,
+  timeOffByDay,
   onDayClick,
 }: {
   heatmap: { grid: number[][]; totalDays: number; startUtc: number };
   year: number;
   monthIndex: number;
   requiredCoverage: number;
+  timeOffByDay: TimeOffByDay;
   onDayClick: (dateStr: string) => void;
 }) {
   const dayGaps = computeMonthGaps(
@@ -295,13 +318,22 @@ function MonthGapGrid({
           const dateStr = c.dateStr;
           const bg = gapCellColor(c.gap, maxGap);
           const isFullyCovered = c.gap === 0;
+          const off = timeOffByDay[dateStr];
+          const ptoCount = off?.pto.length ?? 0;
+          const holCount = off?.holiday.length ?? 0;
+          const offTooltipParts: string[] = [];
+          if (ptoCount) offTooltipParts.push(`PTO: ${off!.pto.join(", ")}`);
+          if (holCount) offTooltipParts.push(`Holiday: ${off!.holiday.join(", ")}`);
+          const titleText =
+            `${dateStr} — ${c.gap}h gap` +
+            (offTooltipParts.length ? `\n${offTooltipParts.join(" • ")}` : "");
           return (
             <button
               key={idx}
               onClick={() => onDayClick(dateStr)}
               className="group relative rounded-md border border-border/40 hover:border-primary/60 hover:shadow-sm transition-all aspect-square flex flex-col items-center justify-center text-center px-2"
               style={{ background: bg }}
-              title={`${dateStr} — ${c.gap}h gap`}
+              title={titleText}
             >
               <span
                 className={`font-display text-base font-semibold ${isFullyCovered ? "text-foreground/80" : "text-white"}`}
@@ -313,22 +345,48 @@ function MonthGapGrid({
               >
                 {c.gap === 0 ? "covered" : `${c.gap}h gap`}
               </span>
+              {(ptoCount > 0 || holCount > 0) && (
+                <div className="absolute top-1 right-1 flex items-center gap-0.5">
+                  {ptoCount > 0 && (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                      title={`${ptoCount} PTO`}
+                    />
+                  )}
+                  {holCount > 0 && (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-violet-500"
+                      title={`${holCount} Holiday`}
+                    />
+                  )}
+                </div>
+              )}
             </button>
           );
         })}
       </div>
-      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-        <span>Gap intensity</span>
-        <div className="inline-flex items-center gap-1">
-          {[0, 0.25, 0.5, 0.75, 1].map((p) => (
-            <div
-              key={p}
-              className="h-3 w-6 rounded-sm border border-border/40"
-              style={{ background: gapCellColor(Math.round(p * maxGap), maxGap) }}
-            />
-          ))}
+      <div className="mt-4 flex items-center flex-wrap gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>Gap intensity</span>
+          <div className="inline-flex items-center gap-1">
+            {[0, 0.25, 0.5, 0.75, 1].map((p) => (
+              <div
+                key={p}
+                className="h-3 w-6 rounded-sm border border-border/40"
+                style={{ background: gapCellColor(Math.round(p * maxGap), maxGap) }}
+              />
+            ))}
+          </div>
+          <span className="ml-1">0 → {maxGap}h</span>
         </div>
-        <span className="ml-1">0 → {maxGap}h</span>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-500" /> PTO
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-violet-500" /> Holiday
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -382,10 +440,12 @@ function HeatGrid({
   heatmap,
   podCount,
   year,
+  timeOffByDay,
 }: {
   heatmap: { grid: number[][]; totalDays: number; startUtc: number };
   podCount: number;
   year: number;
+  timeOffByDay: TimeOffByDay;
 }) {
   // Rows = 24 hours, Columns = 365 days
   // Group days by month for separators.
@@ -411,6 +471,40 @@ function HeatGrid({
             <span className="ml-1">{monthName(mb.month).slice(0, 3)}</span>
           </div>
         ))}
+      </div>
+      {/* PTO/Holiday strip */}
+      <div className="flex gap-1 mb-1">
+        <div className="w-10 shrink-0 text-[9px] text-muted-foreground text-right pr-1 leading-[10px]">
+          off
+        </div>
+        <div
+          className="flex-1 grid gap-px"
+          style={{ gridTemplateColumns: `repeat(${heatmap.totalDays}, minmax(2px, 1fr))` }}
+        >
+          {Array.from({ length: heatmap.totalDays }, (_, d) => {
+            const dateMs = heatmap.startUtc + d * 86_400_000;
+            const dt = new Date(dateMs);
+            const dateStr = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+            const off = timeOffByDay[dateStr];
+            const pto = off?.pto.length ?? 0;
+            const hol = off?.holiday.length ?? 0;
+            let bg = "transparent";
+            if (hol > 0 && pto > 0)
+              bg = "linear-gradient(90deg, oklch(0.7 0.18 60) 0 50%, oklch(0.55 0.22 295) 50% 100%)";
+            else if (hol > 0) bg = "oklch(0.55 0.22 295)";
+            else if (pto > 0) bg = "oklch(0.7 0.18 60)";
+            const titleParts: string[] = [dateStr];
+            if (pto) titleParts.push(`PTO: ${off!.pto.join(", ")}`);
+            if (hol) titleParts.push(`Holiday: ${off!.holiday.join(", ")}`);
+            return (
+              <div
+                key={`off-${d}`}
+                style={{ background: bg, height: 6 }}
+                title={pto || hol ? titleParts.join(" — ") : undefined}
+              />
+            );
+          })}
+        </div>
       </div>
       <div className="flex gap-1">
         {/* Hour labels */}

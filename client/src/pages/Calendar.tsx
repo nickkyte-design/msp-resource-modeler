@@ -351,6 +351,7 @@ function WeekView({
     if (!timeOffByDay.has(t.date)) timeOffByDay.set(t.date, []);
     timeOffByDay.get(t.date)!.push(t);
   }
+  const engineerNamesById = engineerName;
 
   return (
     <div className="card-elegant overflow-hidden">
@@ -373,9 +374,7 @@ function WeekView({
                 {date.getUTCDate()}
               </div>
               {offs.length > 0 && (
-                <div className="text-[10px] text-amber-700 dark:text-amber-300 mt-0.5">
-                  {offs.length} {offs[0].kind === "PTO" ? "PTO" : "Off"}
-                </div>
+                <DayOffIndicator offs={offs} engineerNamesById={engineerNamesById} />
               )}
             </div>
           );
@@ -513,9 +512,7 @@ function MonthView({
                   {cd.getUTCDate()}
                 </div>
                 {dayOff.length > 0 && (
-                  <span className="text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                    {dayOff.length} off
-                  </span>
+                  <DayOffIndicator offs={dayOff} engineerNamesById={engineerName} compact />
                 )}
               </div>
               <div className="flex flex-wrap gap-0.5">
@@ -642,6 +639,70 @@ function YearMonthMini({
           />
         );
       })}
+    </div>
+  );
+}
+
+
+/**
+ * Compact dot indicator: amber dot = engineers on PTO, violet dot = engineers
+ * on Holiday, with a tooltip listing names. Used in WeekView/MonthView day-headers.
+ */
+function DayOffIndicator({
+  offs,
+  engineerNamesById,
+  compact = false,
+}: {
+  offs: { engineerId: number; kind: string }[];
+  engineerNamesById: Map<number, string>;
+  compact?: boolean;
+}) {
+  const ptoNames: string[] = [];
+  const holNames: string[] = [];
+  const ptoIds = new Set<number>();
+  const holIds = new Set<number>();
+  for (const o of offs) {
+    const name = engineerNamesById.get(o.engineerId) ?? `#${o.engineerId}`;
+    if (o.kind.toUpperCase() === "HOLIDAY") {
+      if (!holIds.has(o.engineerId)) {
+        holIds.add(o.engineerId);
+        holNames.push(name);
+      }
+    } else {
+      if (!ptoIds.has(o.engineerId)) {
+        ptoIds.add(o.engineerId);
+        ptoNames.push(name);
+      }
+    }
+  }
+  ptoNames.sort();
+  holNames.sort();
+  const tooltipParts: string[] = [];
+  if (ptoNames.length) tooltipParts.push(`PTO: ${ptoNames.join(", ")}`);
+  if (holNames.length) tooltipParts.push(`Holiday: ${holNames.join(", ")}`);
+  const tooltip = tooltipParts.join(" \u2022 ");
+  return (
+    <div
+      className={`flex items-center ${compact ? "gap-1" : "gap-1.5 mt-1"}`}
+      title={tooltip}
+      aria-label={tooltip}
+    >
+      {ptoNames.length > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-amber-500 shadow-[0_0_0_2px_rgba(245,158,11,0.18)]" />
+          <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300 tabular-nums">
+            {ptoNames.length}
+          </span>
+        </span>
+      )}
+      {holNames.length > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-violet-500 shadow-[0_0_0_2px_rgba(139,92,246,0.18)]" />
+          <span className="text-[10px] font-medium text-violet-700 dark:text-violet-300 tabular-nums">
+            {holNames.length}
+          </span>
+        </span>
+      )}
     </div>
   );
 }
