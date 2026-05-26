@@ -33,6 +33,13 @@ import { defaultCoverageProfile, isSlotCovered, type PodCoverageProfile } from "
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
+/**
+ * Minimum rest period (in hours) that must elapse between the end of one shift
+ * and the start of the same engineer's next shift. 12h is the industry-standard
+ * minimum rest period for on-call rotations (FLSA / EU Working Time Directive).
+ */
+export const MIN_REST_HOURS = 12;
+
 export interface SchedulerEngineerInput {
   id: number;
   active: boolean;
@@ -266,6 +273,12 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
             ) {
               continue;
             }
+            // Check minimum rest period between consecutive shifts.
+            if (
+              violatesMinRest(engineerShiftHistory[eng.id], slotStartMs, slotDuration)
+            ) {
+              continue;
+            }
             assigned = eng;
             break;
           }
@@ -307,6 +320,16 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
             ) {
               continue;
             }
+            // Check minimum rest period between consecutive shifts.
+            if (
+              violatesMinRest(
+                engineerShiftHistory[candidate.id],
+                slotStartMs,
+                slotDuration,
+              )
+            ) {
+              continue;
+            }
             // Check soft preference - prefer weekday-only candidates first
             if (
               candidate.softPreferences.weekdayOnly &&
@@ -341,6 +364,16 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
               hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
                 slotDuration >
               HARD_CAP_HOURS_PER_168H
+            ) {
+              continue;
+            }
+            // Min rest enforcement holds even in the soft-pref-relaxed fallback.
+            if (
+              violatesMinRest(
+                engineerShiftHistory[candidate.id],
+                slotStartMs,
+                slotDuration,
+              )
             ) {
               continue;
             }
@@ -393,6 +426,33 @@ function hoursInLast168h(history: ShiftBlock[], nowMs: number): number {
     }
   }
   return total;
+}
+
+/**
+ * Returns true if placing a shift at `slotStartMs` (lasting `slotDurationHours`)
+ * would violate the MIN_REST_HOURS rule against any shift already in `history`.
+ *
+ * Specifically the new shift's start must be >= MIN_REST_HOURS after the most
+ * recent prior shift's end, AND the new shift's end must be <= MIN_REST_HOURS
+ * before the next future shift's start.
+ */
+function violatesMinRest(
+  history: ShiftBlock[],
+  slotStartMs: number,
+  slotDurationHours: number,
+): boolean {
+  const restMs = MIN_REST_HOURS * HOUR_MS;
+  const slotEndMs = slotStartMs + slotDurationHours * HOUR_MS;
+  for (const s of history) {
+    const sEnd = s.startMs + s.durationHours * HOUR_MS;
+    // Same shift (or overlapping) is always a conflict; treat as no-rest.
+    if (s.startMs < slotEndMs && sEnd > slotStartMs) return true;
+    // Prior shift ends too close to the proposed start.
+    if (sEnd <= slotStartMs && slotStartMs - sEnd < restMs) return true;
+    // Future shift starts too close to the proposed end.
+    if (s.startMs >= slotEndMs && s.startMs - slotEndMs < restMs) return true;
+  }
+  return false;
 }
 
 /**
@@ -509,4 +569,4 @@ function isoWeekKey(d: Date): string {
   return `${tmp.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
-export { hoursInLast168h, toDateKey, yearBounds };
+export { hoursInLast168h, toDateKey, yearBounds, violatesMinRest };

@@ -197,3 +197,60 @@ describe("scheduler.hoursInLast168h", () => {
     expect(total).toBe(24);
   });
 });
+
+
+const HOUR = 60 * 60 * 1000;
+
+describe("scheduler.violatesMinRest", () => {
+  it("rejects a candidate whose previous shift ended < 12h before the proposed start", async () => {
+    const { violatesMinRest, MIN_REST_HOURS } = await import("./scheduler");
+    const history = [
+      { engineerId: 1, podNumber: 1, startMs: Date.UTC(2026, 5, 19, 8), durationHours: 8 },
+    ];
+    // Previous shift ends 2026-06-19 16:00Z; proposed start 2026-06-20 00:00Z → 8h rest.
+    expect(MIN_REST_HOURS).toBe(12);
+    expect(violatesMinRest(history, Date.UTC(2026, 5, 20, 0), 8)).toBe(true);
+  });
+
+  it("allows a candidate when there is exactly MIN_REST_HOURS rest", async () => {
+    const { violatesMinRest } = await import("./scheduler");
+    const history = [
+      { engineerId: 1, podNumber: 1, startMs: Date.UTC(2026, 5, 19, 8), durationHours: 8 },
+    ];
+    // Previous ends 16:00Z; 16:00Z + 12h = 04:00Z next day → exactly MIN_REST.
+    expect(violatesMinRest(history, Date.UTC(2026, 5, 20, 4), 8)).toBe(false);
+  });
+
+  it("rejects when a future shift would start < 12h after the proposed end", async () => {
+    const { violatesMinRest } = await import("./scheduler");
+    const history = [
+      { engineerId: 1, podNumber: 1, startMs: Date.UTC(2026, 5, 20, 4), durationHours: 8 },
+    ];
+    // Future shift starts at 04:00Z; proposed end at 22:00Z prior day → 6h rest before future.
+    expect(violatesMinRest(history, Date.UTC(2026, 5, 19, 14), 8)).toBe(true);
+  });
+});
+
+describe("scheduler.generateSchedule (min-rest enforcement)", () => {
+  it("never schedules an engineer with < 12h rest between consecutive shifts", () => {
+    const engineers = Array.from({ length: 12 }, (_, i) => makeEngineer(i + 1));
+    const result = generateSchedule({ year: 2026, podCount: 3, engineers });
+    // Group shifts by engineer and verify pairwise rest >= 12h.
+    const byEng = new Map<number, typeof result.shifts>();
+    for (const s of result.shifts) {
+      const list = byEng.get(s.engineerId) ?? [];
+      list.push(s);
+      byEng.set(s.engineerId, list);
+    }
+    for (const [engId, list] of byEng) {
+      list.sort((a, b) => a.startMs - b.startMs);
+      for (let i = 1; i < list.length; i++) {
+        const prev = list[i - 1];
+        const next = list[i];
+        const prevEnd = prev.startMs + prev.durationHours * HOUR;
+        const restH = (next.startMs - prevEnd) / HOUR;
+        expect(restH, `eng ${engId} rest ${restH}h between ${new Date(prevEnd).toISOString()} and ${new Date(next.startMs).toISOString()}`).toBeGreaterThanOrEqual(12);
+      }
+    }
+  });
+});
