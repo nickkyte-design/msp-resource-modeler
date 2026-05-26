@@ -250,6 +250,7 @@ export default function HeatMap() {
               monthIndex={monthIndex}
               requiredCoverage={requiredCoverage}
               timeOffByDay={timeOffByDay}
+              podProfiles={profilesInScope}
               onDayClick={(dateStr) => {
                 setDrawerDate(dateStr);
                 setDrawerPod(selectedPod === "all" ? 1 : selectedPod);
@@ -313,6 +314,7 @@ function MonthGapGrid({
   monthIndex,
   requiredCoverage,
   timeOffByDay,
+  podProfiles,
   onDayClick,
 }: {
   heatmap: { grid: number[][]; totalDays: number; startUtc: number };
@@ -320,6 +322,7 @@ function MonthGapGrid({
   monthIndex: number;
   requiredCoverage: number;
   timeOffByDay: TimeOffByDay;
+  podProfiles: PodCoverageProfile[];
   onDayClick: (dateStr: string) => void;
 }) {
   const dayGaps = computeMonthGaps(
@@ -350,6 +353,44 @@ function MonthGapGrid({
         {cells.map((c, idx) => {
           if (c.kind === "blank") return <div key={idx} />;
           const dateStr = c.dateStr;
+          // Is any in-scope pod expecting coverage on this UTC day?
+          const dayMs = Date.UTC(year, monthIndex, c.day);
+          let dayHasCoverage = false;
+          for (let h = 0; h < 24 && !dayHasCoverage; h++) {
+            const cellMs = dayMs + h * 3_600_000;
+            if (podProfiles.some((p) => isInsideCoverage(cellMs, p))) dayHasCoverage = true;
+          }
+          if (!dayHasCoverage) {
+            // Render a hatched gray tile labelled "off" so users see at a glance
+            // that this day is intentionally not staffed.
+            const off = timeOffByDay[dateStr];
+            const ptoCount = off?.pto.length ?? 0;
+            const holCount = off?.holiday.length ?? 0;
+            return (
+              <div
+                key={idx}
+                className="relative rounded-md border border-border/40 aspect-square flex flex-col items-center justify-center text-center px-2"
+                style={{
+                  background:
+                    "repeating-linear-gradient(45deg, oklch(0.92 0 0 / 0.6) 0, oklch(0.92 0 0 / 0.6) 2px, transparent 2px, transparent 5px)",
+                }}
+                title={`${dateStr} — outside coverage window (not required)`}
+              >
+                <span className="font-display text-base font-semibold text-muted-foreground">
+                  {c.day}
+                </span>
+                <span className="text-[9px] mt-0.5 uppercase tracking-[0.18em] text-muted-foreground">
+                  off
+                </span>
+                {(ptoCount > 0 || holCount > 0) && (
+                  <div className="absolute top-1 right-1 flex items-center gap-0.5">
+                    {ptoCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                    {holCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />}
+                  </div>
+                )}
+              </div>
+            );
+          }
           const bg = gapCellColor(c.gap, maxGap);
           const isFullyCovered = c.gap === 0;
           const off = timeOffByDay[dateStr];
@@ -419,6 +460,19 @@ function MonthGapGrid({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-violet-500" /> Holiday
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5"
+            title="Day is outside the configured coverage window for any in-scope pod"
+          >
+            <span
+              className="h-3 w-5 rounded-sm border border-border/40"
+              style={{
+                background:
+                  "repeating-linear-gradient(45deg, oklch(0.85 0 0 / 0.8) 0, oklch(0.85 0 0 / 0.8) 2px, transparent 2px, transparent 5px)",
+              }}
+            />
+            Off-window
           </span>
         </div>
       </div>

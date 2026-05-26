@@ -150,3 +150,48 @@ describe("gapSuggester.suggestFixesForGaps", () => {
     expect(unfilled).toHaveLength(0); // not considered at all
   });
 });
+
+
+describe("gapSuggester.isBackToBack", () => {
+  it("rejects an engineer whose existing shift ends 1h before the gap starts", async () => {
+    const { isBackToBack } = await import("../shared/gapSuggester");
+    const gapStart = MON_2026_06_01_UTC + 14 * HOUR;
+    const gapEnd = gapStart + 4 * HOUR;
+    // Shift ends at 13:00 UTC (one hour before gap) -> within 10h rest -> back-to-back
+    const shifts = [{ engineerId: 1, startMs: gapStart - 9 * HOUR, durationHours: 8 }];
+    expect(isBackToBack(shifts, 1, gapStart, gapEnd)).toBe(true);
+  });
+
+  it("accepts an engineer whose shift ends 12h before the gap", async () => {
+    const { isBackToBack } = await import("../shared/gapSuggester");
+    const gapStart = MON_2026_06_01_UTC + 14 * HOUR;
+    const gapEnd = gapStart + 4 * HOUR;
+    const shifts = [{ engineerId: 1, startMs: gapStart - 20 * HOUR, durationHours: 8 }];
+    expect(isBackToBack(shifts, 1, gapStart, gapEnd)).toBe(false);
+  });
+
+  it("ignores shifts belonging to other engineers", async () => {
+    const { isBackToBack } = await import("../shared/gapSuggester");
+    const gapStart = MON_2026_06_01_UTC + 14 * HOUR;
+    const gapEnd = gapStart + 4 * HOUR;
+    const shifts = [{ engineerId: 2, startMs: gapStart - 1 * HOUR, durationHours: 4 }];
+    expect(isBackToBack(shifts, 1, gapStart, gapEnd)).toBe(false);
+  });
+
+  it("suggester picks the other engineer when the closer one would be back-to-back", () => {
+    const gapStart = MON_2026_06_01_UTC + 14 * HOUR;
+    const gapEnd = gapStart + 4 * HOUR;
+    const existing: SuggesterShift[] = [
+      // Alice just finished a shift 1h before
+      { engineerId: 1, startMs: gapStart - 9 * HOUR, durationHours: 8 },
+    ];
+    const result = suggestFixForGap(
+      { podNumber: 1, startMs: gapStart, endMs: gapEnd, durationHours: 4, anchorTimezone: "EDT" },
+      [eng({ id: 1, name: "Alice" }), eng({ id: 2, name: "Bob" })],
+      existing,
+      [],
+    );
+    expect(result).not.toBeNull();
+    expect(result!.engineer.id).toBe(2);
+  });
+});

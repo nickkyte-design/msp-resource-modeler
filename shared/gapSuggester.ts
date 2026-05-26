@@ -43,6 +43,33 @@ export type SuggesterTimeOff = {
 const HOUR = 3_600_000;
 const ROLLING_WINDOW_HOURS = 168;
 const ROLLING_CAP_HOURS = 45;
+/** Required rest between two shifts assigned to the same engineer. */
+const MIN_REST_HOURS = 10;
+
+/**
+ * True when the engineer has a shift that starts within `MIN_REST_HOURS` of the
+ * proposed gap window or whose end is within `MIN_REST_HOURS` of `gap.startMs`.
+ * This prevents back-to-back stacking (and therefore burnout) when the suggester
+ * would otherwise pick the same engineer whose previous shift ends one hour
+ * before the gap begins.
+ */
+export function isBackToBack(
+  shifts: SuggesterShift[],
+  engineerId: number,
+  gapStartMs: number,
+  gapEndMs: number,
+): boolean {
+  for (const s of shifts) {
+    if (s.engineerId !== engineerId) continue;
+    const sStart = s.startMs;
+    const sEnd = s.startMs + s.durationHours * HOUR;
+    // Overlap or too-close on either side.
+    if (sEnd > gapStartMs - MIN_REST_HOURS * HOUR && sStart < gapEndMs + MIN_REST_HOURS * HOUR) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** Sum of an engineer's shift hours that overlap [windowStart, windowEnd). */
 export function hoursInRange(
@@ -108,6 +135,9 @@ export function suggestFixForGap(
     const dow = new Date(gap.startMs).getUTCDay();
     const isWeekend = dow === 0 || dow === 6;
     if (e.weekdayOnly && isWeekend) continue;
+    // Back-to-back avoidance: skip engineers with a shift within MIN_REST_HOURS
+    // on either side of the gap window.
+    if (isBackToBack(existingShifts, e.id, gap.startMs, gap.endMs)) continue;
 
     const reasons: string[] = [];
     let score = 100;

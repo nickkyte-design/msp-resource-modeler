@@ -147,15 +147,15 @@
 
 ## v1.11 — Gap Report productivity upgrades
 
-- [ ] PTO/Holiday chip in each gap-table row (reuse `timeOffByDay`)
-- [ ] Severity filter on Gap Report (`all` / `>=4h` / `>=8h` / `>=16h`)
-- [ ] Day-of-week heat strip above the calendar (7 cells showing per-DoW gap-hour totals)
-- [ ] Shared gap-suggester helper: pick best engineer respecting tz, 45h/168h caps, weekday preference, PTO, and back-to-back
-- [ ] `gaps.suggestFix` tRPC query that returns the candidate engineer + override-shift payload for one gap
-- [ ] `gaps.autoFixSmall` tRPC mutation that suggests + applies fixes for every gap <= 8h in one transaction
-- [ ] UI: per-row "Suggest" button → confirm dialog → calls `shifts.createOverride`
-- [ ] UI: "Auto-fix gaps <=8h" bulk button in Gap Report toolbar with result toast/dialog
-- [ ] Vitest: suggester cap-awareness, tz match, PTO avoidance; severity filter helper
+- [x] PTO/Holiday chip in each gap-table row (reuse `timeOffByDay`)
+- [x] Severity filter on Gap Report (`all` / `>=4h` / `>=8h` / `>=16h`)
+- [x] Day-of-week heat strip above the calendar (7 cells showing per-DoW gap-hour totals)
+- [x] Shared gap-suggester helper: pick best engineer respecting tz, 45h/168h caps, weekday preference, PTO, and back-to-back (10h min rest)
+- [x] `gaps.suggestFix` tRPC query that returns the candidate engineer + ready-to-apply `override` payload
+- [x] `gaps.autoFixSmall` tRPC mutation that suggests + applies fixes for every gap <= 8h in one transaction
+- [x] UI: per-row "Suggest" button → AlertDialog confirm → `shifts.createOverride`
+- [x] UI: "Auto-fix gaps <=8h" bulk button in Gap Report toolbar with result toast/dialog
+- [x] Vitest: suggester cap-awareness, tz match, PTO avoidance, weekday block, back-to-back avoidance + severity filter helper (22 new tests, 117 total passing)
 
 ## v2.0 — Per-site coverage profiles (days/week + hours/day)
 
@@ -168,7 +168,7 @@
 - [x] tRPC `pods.list` / `pods.upsert` procedures + zod schema
 - [x] Settings UI: per-pod card with day-of-week chips, hours-per-day presets (8/10/12/16/20/24), start-hour + anchor-TZ pickers
 - [x] Gap Report uses coverage-aware math; off-hours no longer counted as gaps (Calendar/Heat Map dim-overlay deferred to v2.1)
-- [ ] (v2.1) Heat Map: hatch/gray non-coverage hours instead of leaving them blank
+- [x] (v2.1) Heat Map Year view + Month view: hatched gray non-coverage cells labelled "off" with "outside coverage window" tooltip and an Off-window legend chip
 - [x] Headcount recommender uses sum(per-pod weekly-required-hours) baseline (`computeHeadcountSuggestionForCoverage`)
 - [x] Bump `APP_VERSION` to `2.0.0`
 - [x] Vitest: coverage helper edge cases (incl. IST wrap-past-midnight), gap detector windowing, headcount math (18 new tests, 95 total passing)

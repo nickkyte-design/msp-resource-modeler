@@ -527,7 +527,7 @@ export const appRouter = router({
           year: z.number().int(),
         }),
       )
-      .mutation(async ({ input }) => {
+      .query(async ({ input }) => {
         const podRows = await listPodCoverage();
         const profile =
           podRows.find((r) => r.podNumber === input.podNumber) ??
@@ -557,7 +557,21 @@ export const appRouter = router({
           date: t.date,
         }));
         const result = suggestFixForGap(gap, engineers, existingShifts, timeOff);
-        return result;
+        if (!result) return null;
+        // Surface the exact override-shift payload the client can pass to
+        // `shifts.createOverride` once the user confirms.
+        return {
+          engineer: result.engineer,
+          reasons: result.reasons,
+          score: result.score,
+          override: {
+            engineerId: result.engineer.id,
+            podNumber: input.podNumber,
+            startMs: result.startMs,
+            durationHours: result.durationHours,
+            scheduleYear: input.year,
+          },
+        };
       }),
 
     /**

@@ -22,6 +22,17 @@ import { trpc } from "@/lib/trpc";
 import { findGapsWithCoverage, clipGapsToWindow } from "@shared/gaps";
 import { defaultCoverageProfile, requiredHoursInRange, type PodCoverageProfile } from "@shared/coverage";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
+import { filterGapsBySeverity, type Severity } from "@shared/severity";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
 import { AlertTriangle, ArrowRight, CheckCircle2, Download, Sparkles, Wand2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -72,7 +83,22 @@ export default function GapReport() {
   );
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
-  const suggestFixMutation = trpc.gaps.suggestFix.useMutation();
+  const createOverrideMutation = trpc.shifts.createOverride.useMutation({
+    onSuccess: () => utils.schedule.list.invalidate(),
+  });
+  // Confirm dialog state holding the suggester payload until user accepts.
+  const [confirmSuggestion, setConfirmSuggestion] = useState<null | {
+    gap: Gap;
+    engineer: { id: number; name: string };
+    reasons: string[];
+    override: {
+      engineerId: number;
+      podNumber: number;
+      startMs: number;
+      durationHours: number;
+      scheduleYear: number;
+    };
+  }>(null);
   const autoFixMutation = trpc.gaps.autoFixSmall.useMutation({
     onSuccess: (res) => {
       if (res.filled > 0) {
@@ -94,7 +120,7 @@ export default function GapReport() {
   async function handleSuggest(g: Gap) {
     const t = toast.loading(`Looking for someone to cover this ${g.durationHours}h gap…`);
     try {
-      const result = await suggestFixMutation.mutateAsync({
+      const result = await utils.gaps.suggestFix.fetch({
         podNumber: g.podNumber,
         startMs: g.startMs,
         durationHours: g.durationHours,
@@ -103,23 +129,35 @@ export default function GapReport() {
       toast.dismiss(t);
       if (!result) {
         toast.warning(`No eligible engineer`, {
-          description: `Every Pod ${g.podNumber} engineer is either at cap, on PTO, or has a hard weekday block.`,
+          description: `Every Pod ${g.podNumber} engineer is either at cap, on PTO, or has a hard weekday/back-to-back block.`,
         });
         return;
       }
-      toast.success(`Suggested: ${result.engineer.name}`, {
-        description: result.reasons.join(" • "),
-        action: {
-          label: "Open day to confirm",
-          onClick: () => {
-            const sp = new Date(g.startMs);
-            openDay(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), g.podNumber);
-          },
-        },
+      // Open the confirm dialog with the override payload.
+      setConfirmSuggestion({
+        gap: g,
+        engineer: result.engineer,
+        reasons: result.reasons,
+        override: result.override,
       });
     } catch (e) {
       toast.dismiss(t);
       toast.error(`Suggest fix failed`, { description: (e as Error).message });
+    }
+  }
+
+  async function handleConfirmSuggestion() {
+    if (!confirmSuggestion) return;
+    try {
+      await createOverrideMutation.mutateAsync(confirmSuggestion.override);
+      toast.success(`Override added`, {
+        description: `${confirmSuggestion.engineer.name} now covers ${confirmSuggestion.override.durationHours}h starting ${new Date(
+          confirmSuggestion.override.startMs,
+        ).toUTCString()}.`,
+      });
+      setConfirmSuggestion(null);
+    } catch (e) {
+      toast.error(`Failed to add override`, { description: (e as Error).message });
     }
   }
 
@@ -183,7 +221,7 @@ export default function GapReport() {
     const clipped =
       selectedMonth === "all" ? podFiltered : clipGapsToWindow(podFiltered, windowStartMs, windowEndMs);
     if (minSeverity === 0) return clipped;
-    return clipped.filter((g) => g.durationHours >= minSeverity);
+    return filterGapsBySeverity(clipped, String(minSeverity) as Severity);
   }, [gaps, selectedPod, selectedMonth, windowStartMs, windowEndMs, minSeverity]);
 
   // Day-of-week histogram: total gap hours per weekday (Sun..Sat).
@@ -636,6 +674,63 @@ export default function GapReport() {
         tz={tz}
         year={year}
       />
+
+      <AlertDialog
+        open={confirmSuggestion !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmSuggestion(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Add override shift for {confirmSuggestion?.engineer.name}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-semibold text-foreground">
+                    Pod {confirmSuggestion?.gap.podNumber}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {confirmSuggestion ? ` • ${confirmSuggestion.gap.durationHours}h starting ` : " "}
+                  </span>
+                  <span className="font-mono text-foreground">
+                    {confirmSuggestion
+                      ? new Date(confirmSuggestion.override.startMs).toUTCString()
+                      : ""}
+                  </span>
+                </div>
+                {confirmSuggestion?.reasons && confirmSuggestion.reasons.length > 0 && (
+                  <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
+                    {confirmSuggestion.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-xs text-muted-foreground pt-1">
+                  This adds a manual override shift that the next auto-generated
+                  schedule will preserve.
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={createOverrideMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmSuggestion();
+              }}
+              disabled={createOverrideMutation.isPending}
+            >
+              {createOverrideMutation.isPending ? "Adding…" : "Add override shift"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
