@@ -126,3 +126,32 @@ export const timeOff = mysqlTable("timeOff", {
 
 export type TimeOff = typeof timeOff.$inferSelect;
 export type InsertTimeOff = typeof timeOff.$inferInsert;
+
+/**
+ * Per-pod (site) coverage profile.
+ *
+ * Encodes which days of the week a site must be staffed and the daily on-call
+ * window (start hour + total hours per day). All times are interpreted in the
+ * pod's `anchorTimezone`; the scheduler and gap detector translate to UTC.
+ *
+ * `daysOfWeek` is a 7-bit mask: bit 0 = Sunday … bit 6 = Saturday.
+ * Default of 127 = all 7 days.
+ *
+ * Defaults preserve the legacy 24×7 behavior so any pod row missing from this
+ * table is implicitly treated as fully covered.
+ */
+export const podCoverage = mysqlTable("podCoverage", {
+  podNumber: int("podNumber").primaryKey(),
+  /** 7-bit mask: 1=Sun, 2=Mon, 4=Tue, 8=Wed, 16=Thu, 32=Fri, 64=Sat. */
+  daysOfWeek: int("daysOfWeek").notNull().default(127),
+  /** Hour of day (0-23) at which the daily coverage window begins, in `anchorTimezone`. */
+  coverageStartHour: int("coverageStartHour").notNull().default(0),
+  /** Hours of coverage required each active day (1-24). Common: 8, 10, 12, 16, 20, 24. */
+  coverageHoursPerDay: int("coverageHoursPerDay").notNull().default(24),
+  /** Timezone anchor for interpreting the coverage window. */
+  anchorTimezone: varchar("anchorTimezone", { length: 8 }).notNull().default("EDT"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PodCoverage = typeof podCoverage.$inferSelect;
+export type InsertPodCoverage = typeof podCoverage.$inferInsert;

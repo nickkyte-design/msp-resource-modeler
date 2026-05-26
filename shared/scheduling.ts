@@ -4,7 +4,7 @@
  */
 
 /** App version surfaced in the UI; bumped each release. */
-export const APP_VERSION = "1.8.0";
+export const APP_VERSION = "2.0.0";
 
 export const TIMEZONES = ["EDT", "PDT", "SGT", "BST", "IST"] as const;
 export type Timezone = (typeof TIMEZONES)[number];
@@ -156,6 +156,78 @@ export function computeHeadcountSuggestion(
     recommendedPerPod,
     minimumTotal: minimumPerPod * podCount,
     recommendedTotal: recommendedPerPod * podCount,
+    reasoning,
+  };
+}
+
+/**
+ * Coverage-aware headcount suggestion.
+ *
+ * Unlike `computeHeadcountSuggestion`, this version accepts the *actual* weekly
+ * coverage hours required per pod (which depends on the pod's days-of-week
+ * mask and hours-per-day setting). When all pods are 24×7 it produces the same
+ * recommendation; for partial coverage (e.g. Mon–Fri 12h) it scales the
+ * minimum down so the suggestion no longer over-staffs the team.
+ */
+export function computeHeadcountSuggestionForCoverage(
+  podCount: 1 | 2 | 3,
+  weeklyHoursPerPod: number[],
+  ptoEnabled: boolean,
+  holidaysEnabled: boolean,
+): HeadcountSuggestion {
+  const shiftsPerEngineerPerWeek = SHIFTS_PER_BLOCK;
+  // For each pod: ceil(weeklyHours / preferred-shift-hours / shifts-per-engineer-per-week)
+  // is the minimum engineers needed just to fill the rotation in that pod.
+  const perPodMins = weeklyHoursPerPod.slice(0, podCount).map((h) => {
+    const shiftsPerWeek = Math.ceil(Math.max(0, h) / PREFERRED_SHIFT_HOURS);
+    return Math.max(1, Math.ceil(shiftsPerWeek / shiftsPerEngineerPerWeek));
+  });
+  const maxMin = perPodMins.reduce((a, b) => Math.max(a, b), 1);
+
+  let lossFraction = 0;
+  if (ptoEnabled) lossFraction += PTO_DAYS_PER_YEAR / 52 / 5;
+  if (holidaysEnabled) lossFraction += HOLIDAY_DAYS_PER_YEAR / 52 / 5;
+  const CLUSTERING_MARGIN = 0.10;
+  const FLOATING_RELIEVER = 1;
+
+  const recommendedPerPod = Math.max(
+    maxMin + FLOATING_RELIEVER,
+    Math.ceil(maxMin * (1 + lossFraction + CLUSTERING_MARGIN)) + FLOATING_RELIEVER,
+  );
+
+  // Sum minimums across pods (each pod can have a different floor if its weekly hours differ).
+  const minimumTotal = perPodMins.reduce((a, b) => a + b, 0);
+  // Recommended total: scale `recommendedPerPod` per pod by relative load so the
+  // team isn't over-staffed when pods have very different coverage profiles.
+  const recommendedTotal = perPodMins.reduce(
+    (acc, mn) => acc + Math.max(mn + FLOATING_RELIEVER, Math.ceil(mn * (1 + lossFraction + CLUSTERING_MARGIN)) + FLOATING_RELIEVER),
+    0,
+  );
+
+  const reasoning: string[] = [
+    `Per-pod weekly coverage: ${weeklyHoursPerPod.slice(0, podCount).map((h, i) => `Pod ${i + 1}: ${h}h`).join(", ")}.`,
+    `Each engineer covers at most ${shiftsPerEngineerPerWeek} shifts per week under the 48h-off / 120h-on cycle.`,
+    `Per-pod rotation floor: ${perPodMins.map((m, i) => `Pod ${i + 1}: ${m}`).join(", ")}.`,
+  ];
+  if (ptoEnabled || holidaysEnabled) {
+    const days =
+      (ptoEnabled ? PTO_DAYS_PER_YEAR : 0) + (holidaysEnabled ? HOLIDAY_DAYS_PER_YEAR : 0);
+    reasoning.push(
+      `Add buffer for ${days} PTO/holiday days per engineer per year (≈ ${(lossFraction * 100).toFixed(0)}% capacity loss).`,
+    );
+  }
+  reasoning.push(
+    `Add a ${(CLUSTERING_MARGIN * 100).toFixed(0)}% clustering margin per pod and a +${FLOATING_RELIEVER} floating reliever per pod.`,
+  );
+  reasoning.push(
+    `Coverage-aware recommendation: ${recommendedTotal} engineers total across ${podCount} pod${podCount === 1 ? "" : "s"}.`,
+  );
+
+  return {
+    minimumPerPod: maxMin,
+    recommendedPerPod,
+    minimumTotal,
+    recommendedTotal,
     reasoning,
   };
 }

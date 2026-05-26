@@ -26,6 +26,7 @@ import {
   listEngineers,
   listLocations,
   listManualOverridesForYear,
+  listPodCoverage,
   listShiftsForYear,
   listShiftsInRange,
   listTimeOffForYear,
@@ -33,7 +34,9 @@ import {
   updateEngineer,
   updateLocation,
   updateSettings,
+  upsertPodCoverage,
 } from "./db";
+import type { PodCoverageProfile } from "../shared/coverage";
 import { assignTimeOff, generateSchedule } from "./scheduler";
 import { rebalancePods } from "../shared/rebalance";
 import { invokeLLM } from "./_core/llm";
@@ -49,6 +52,16 @@ const hardPrefSchema = z.object({
 });
 
 const timezoneSchema = z.enum(["EDT", "PDT", "SGT", "BST", "IST"]);
+
+const podCoverageInputSchema = z.object({
+  podNumber: z.number().int().min(1).max(3),
+  /** 7-bit mask: 1=Sun, 2=Mon, 4=Tue, 8=Wed, 16=Thu, 32=Fri, 64=Sat. */
+  daysOfWeek: z.number().int().min(0).max(127),
+  coverageStartHour: z.number().int().min(0).max(23),
+  /** Hours per active day. Common: 8, 10, 12, 16, 20, 24. */
+  coverageHoursPerDay: z.number().int().min(1).max(24),
+  anchorTimezone: timezoneSchema,
+});
 
 export const appRouter = router({
   system: systemRouter,
@@ -321,6 +334,17 @@ export const appRouter = router({
         // them in the 45h/168h cap when assigning new auto shifts.
         const existingOverrides = await listManualOverridesForYear(year);
 
+        // Step 2.7: load per-pod coverage profiles. Missing rows fall back to 24×7
+        // inside the scheduler, so this is safe even if the user never edited Settings.
+        const coverageRows = await listPodCoverage();
+        const podProfiles: PodCoverageProfile[] = coverageRows.map((r) => ({
+          podNumber: r.podNumber,
+          daysOfWeek: r.daysOfWeek,
+          coverageStartHour: r.coverageStartHour,
+          coverageHoursPerDay: r.coverageHoursPerDay,
+          anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+        }));
+
         // Step 3: generate schedule.
         const result = generateSchedule({
           year,
@@ -343,6 +367,7 @@ export const appRouter = router({
             startMs: Number(o.startMs),
             durationHours: o.durationHours,
           })),
+          podProfiles,
         });
 
         // Step 4: persist shifts. Preserve manual overrides; clear only auto shifts.
@@ -418,6 +443,33 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteShift(input.id);
         return { success: true };
+      }),
+  }),
+
+  // ====== Pod Coverage Profiles ======
+  pods: router({
+    list: publicProcedure.query(async () => {
+      const rows = await listPodCoverage();
+      return rows.map((r) => ({
+        podNumber: r.podNumber,
+        daysOfWeek: r.daysOfWeek,
+        coverageStartHour: r.coverageStartHour,
+        coverageHoursPerDay: r.coverageHoursPerDay,
+        anchorTimezone: r.anchorTimezone,
+      }));
+    }),
+    upsert: publicProcedure
+      .input(podCoverageInputSchema)
+      .mutation(async ({ input }) => {
+        const row = await upsertPodCoverage(input);
+        if (!row) return null;
+        return {
+          podNumber: row.podNumber,
+          daysOfWeek: row.daysOfWeek,
+          coverageStartHour: row.coverageStartHour,
+          coverageHoursPerDay: row.coverageHoursPerDay,
+          anchorTimezone: row.anchorTimezone,
+        };
       }),
   }),
 

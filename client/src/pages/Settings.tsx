@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import {
   computeHeadcountSuggestion,
+  computeHeadcountSuggestionForCoverage,
   HOLIDAY_DAYS_PER_YEAR,
   PTO_DAYS_PER_YEAR,
   TIMEZONES,
@@ -27,11 +28,13 @@ import {
 } from "@/components/ui/popover";
 import { useState } from "react";
 import { toast } from "sonner";
+import PodCoverageSection from "@/components/PodCoverageSection";
 
 export default function SettingsPage() {
   const utils = trpc.useUtils();
   const { data: settings } = trpc.settings.get.useQuery();
   const { data: engineers = [] } = trpc.engineers.list.useQuery();
+  const { data: podCoverageRows = [] } = trpc.pods.list.useQuery();
   const { data: locations = [] } = trpc.locations.list.useQuery();
 
   const updateSettings = trpc.settings.update.useMutation({
@@ -80,11 +83,20 @@ export default function SettingsPage() {
   }
 
   const podCount = settings.podCount as 1 | 2 | 3;
-  const suggestion = computeHeadcountSuggestion(
-    podCount,
-    settings.ptoEnabled,
-    settings.holidaysEnabled,
-  );
+  const fallback = computeHeadcountSuggestion(podCount, settings.ptoEnabled, settings.holidaysEnabled);
+  const suggestion = podCoverageRows && podCoverageRows.length > 0
+    ? computeHeadcountSuggestionForCoverage(
+        podCount,
+        Array.from({ length: podCount }, (_, i) => {
+          const row = podCoverageRows.find((r) => r.podNumber === i + 1);
+          if (!row) return 24 * 7;
+          const days = Array.from({ length: 7 }, (_, d) => (row.daysOfWeek & (1 << d)) !== 0).filter(Boolean).length;
+          return days * row.coverageHoursPerDay;
+        }),
+        settings.ptoEnabled,
+        settings.holidaysEnabled,
+      )
+    : fallback;
   const activeCount = engineers.filter((e) => e.active).length;
   const meetsSuggested = activeCount >= suggestion.recommendedTotal;
   const meetsMinimum = activeCount >= suggestion.minimumTotal;
@@ -337,6 +349,9 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Per-pod coverage profiles */}
+        <PodCoverageSection podCount={settings.podCount} />
 
         {/* Locations */}
         <section className="card-elegant p-7">

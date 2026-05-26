@@ -9,6 +9,8 @@ import {
   InsertTimeOff,
   InsertUser,
   locations,
+  podCoverage,
+  type InsertPodCoverage,
   settings,
   shifts,
   timeOff,
@@ -230,6 +232,34 @@ export async function deleteLocation(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(locations).where(eq(locations.id, id));
+}
+
+// ====== Pod Coverage ======
+export async function listPodCoverage() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(podCoverage).orderBy(asc(podCoverage.podNumber));
+}
+
+export async function upsertPodCoverage(row: InsertPodCoverage) {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await db
+    .select()
+    .from(podCoverage)
+    .where(eq(podCoverage.podNumber, row.podNumber))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(podCoverage).values(row);
+  } else {
+    await db.update(podCoverage).set(row).where(eq(podCoverage.podNumber, row.podNumber));
+  }
+  const rows = await db
+    .select()
+    .from(podCoverage)
+    .where(eq(podCoverage.podNumber, row.podNumber))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 // ====== Shifts ======

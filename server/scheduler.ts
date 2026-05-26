@@ -28,6 +28,7 @@ import {
   type ShiftBlock,
   type SoftPreferences,
 } from "../shared/scheduling";
+import { defaultCoverageProfile, isSlotCovered, type PodCoverageProfile } from "../shared/coverage";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -53,6 +54,12 @@ export interface SchedulerInput {
    * It does NOT remove overlapping auto shifts — overrides coexist with auto coverage.
    */
   existingShifts?: ShiftBlock[];
+  /**
+   * Per-pod coverage profiles. When omitted (or a profile missing for a pod),
+   * the scheduler defaults to legacy 24×7 behavior so older callers continue
+   * to work unchanged.
+   */
+  podProfiles?: PodCoverageProfile[];
 }
 
 export interface SchedulerOutput {
@@ -141,12 +148,28 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
 
   const pools = partitionEngineers(engineers, podCount);
 
+  // Normalize coverage profiles so every pod has one. Pods without an explicit
+  // profile default to 24×7 (legacy behavior).
+  const profileByPod: Record<number, PodCoverageProfile> = {};
+  for (let p = 1; p <= podCount; p++) profileByPod[p] = defaultCoverageProfile(p);
+  if (input.podProfiles) {
+    for (const pr of input.podProfiles) profileByPod[pr.podNumber] = pr;
+  }
+
   // For each pod independently, generate coverage.
   for (let pod = 1; pod <= podCount; pod++) {
+    const profile = profileByPod[pod];
     const pool = pools.get(pod)!;
     if (pool.length === 0) {
-      // No engineers => entire year is a gap.
-      gapHoursPerPod[pod] = totalDays * 24;
+      // No engineers => only the *covered* hours of the year are gaps.
+      let podGap = 0;
+      for (let d = 0; d < totalDays; d++) {
+        const dStart = startMs + d * DAY_MS;
+        for (let h = 0; h < 24; h++) {
+          if (isSlotCovered(profile, dStart + h * HOUR_MS, 1)) podGap += 1;
+        }
+      }
+      gapHoursPerPod[pod] = podGap;
       continue;
     }
 
@@ -211,10 +234,15 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
       const dayOfWeek = dayDate.getUTCDay();
       const dayKey = toDateKey(dayDate);
 
-      // For each slot, ensure it is covered.
+      // For each slot, ensure it is covered — *if* the slot is inside the pod's
+      // coverage window. Off-hours and off-days are skipped silently and do not
+      // contribute to `gapHoursPerPod`.
       for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
         const slotStartMs = dayStartMs + slot * PREFERRED_SHIFT_HOURS * HOUR_MS;
         const slotDuration = PREFERRED_SHIFT_HOURS;
+        if (!isSlotCovered(profile, slotStartMs, slotDuration)) {
+          continue;
+        }
 
         // Find an engineer with an active block covering this slot today.
         let assigned: SchedulerEngineerInput | null = null;

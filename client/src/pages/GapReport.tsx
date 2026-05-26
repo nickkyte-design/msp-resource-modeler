@@ -19,7 +19,8 @@ import {
 import DayScheduleDrawer from "@/components/DayScheduleDrawer";
 import { formatHour, monthName, monthNameShort, toTzParts } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { findGaps, clipGapsToWindow } from "@shared/gaps";
+import { findGapsWithCoverage, clipGapsToWindow } from "@shared/gaps";
+import { defaultCoverageProfile, requiredHoursInRange, type PodCoverageProfile } from "@shared/coverage";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
 import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
 import { AlertTriangle, ArrowRight, CheckCircle2, Download } from "lucide-react";
@@ -79,14 +80,33 @@ export default function GapReport() {
     setDrawerOpen(true);
   };
 
-  // Compute contiguous gap intervals per pod (uses shared pure helper).
+  const { data: podProfilesRaw = [] } = trpc.pods.list.useQuery();
+  const podProfiles = useMemo<PodCoverageProfile[]>(() => {
+    const out: PodCoverageProfile[] = [];
+    const byPod = new Map<number, PodCoverageProfile>();
+    for (const p of podProfilesRaw) {
+      byPod.set(p.podNumber, {
+        podNumber: p.podNumber,
+        daysOfWeek: p.daysOfWeek,
+        coverageStartHour: p.coverageStartHour,
+        coverageHoursPerDay: p.coverageHoursPerDay,
+        anchorTimezone: p.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+      });
+    }
+    for (let p = 1; p <= podCount; p++) {
+      out.push(byPod.get(p) ?? defaultCoverageProfile(p));
+    }
+    return out;
+  }, [podProfilesRaw, podCount]);
+
+  // Compute contiguous gap intervals per pod, respecting each pod's coverage window.
   const gaps = useMemo<Gap[]>(() => {
-    if (allShifts.length === 0) return [];
+    if (allShifts.length === 0 && podProfiles.length === 0) return [];
     const startUtc = Date.UTC(year, 0, 1);
     const endUtc = Date.UTC(year + 1, 0, 1);
     const totalHours = Math.round((endUtc - startUtc) / 3_600_000);
-    return findGaps(allShifts, podCount, startUtc, totalHours);
-  }, [allShifts, year, podCount]);
+    return findGapsWithCoverage(allShifts, podProfiles, startUtc, totalHours);
+  }, [allShifts, year, podProfiles]);
 
   // Apply pod filter first, then split each gap so it falls inside [windowStart, windowEnd]
   // when a specific month is selected. This keeps duration math accurate for partial-month
@@ -102,7 +122,6 @@ export default function GapReport() {
         : Date.UTC(year, selectedMonth + 1, 1),
     [selectedMonth, year],
   );
-  const windowHours = Math.round((windowEndMs - windowStartMs) / 3_600_000);
 
   const visibleGaps = useMemo(() => {
     const podFiltered =
@@ -113,7 +132,14 @@ export default function GapReport() {
 
   const totalGapHours = visibleGaps.reduce((acc, g) => acc + g.durationHours, 0);
   const podsInScope = selectedPod === "all" ? podCount : 1;
-  const totalRequiredHours = podsInScope * windowHours;
+  const totalRequiredHours = useMemo(() => {
+    const profilesInScope =
+      selectedPod === "all" ? podProfiles : podProfiles.filter((p) => p.podNumber === selectedPod);
+    return profilesInScope.reduce(
+      (acc, p) => acc + requiredHoursInRange(p, windowStartMs, windowEndMs),
+      0,
+    );
+  }, [podProfiles, selectedPod, windowStartMs, windowEndMs]);
   const coveragePct =
     totalRequiredHours === 0
       ? 100
@@ -282,7 +308,14 @@ export default function GapReport() {
                     ? podGaps
                     : clipGapsToWindow(podGaps, windowStartMs, windowEndMs);
                 const podGapHours = podGapsClipped.reduce((a, g) => a + g.durationHours, 0);
-                const podCoverage = ((windowHours - podGapHours) / windowHours) * 100;
+                const profile = podProfiles.find((pp) => pp.podNumber === p);
+                const podRequiredHours = profile
+                  ? requiredHoursInRange(profile, windowStartMs, windowEndMs)
+                  : 0;
+                const podCoverage =
+                  podRequiredHours === 0
+                    ? 100
+                    : ((podRequiredHours - podGapHours) / podRequiredHours) * 100;
                 return (
                   <div
                     key={p}

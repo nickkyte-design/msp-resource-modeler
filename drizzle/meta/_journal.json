@@ -43,6 +43,13 @@
       "when": 1779219269970,
       "tag": "0005_gigantic_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1779768392480,
+      "tag": "0006_burly_eternals",
+      "breakpoints": true
     }
   ]
 }

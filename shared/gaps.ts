@@ -2,7 +2,13 @@
  * Pure gap-detection algorithm shared between the GapReport UI and unit tests.
  * Walks the year hour-by-hour, per pod, and emits each contiguous run of
  * uncovered hours as a Gap interval.
+ *
+ * `findGaps` is the legacy 24×7 variant kept for back-compat. New callers
+ * should prefer `findGapsWithCoverage`, which accepts per-pod `PodCoverageProfile`
+ * objects so off-hours / off-days are skipped rather than treated as gaps.
  */
+
+import { isSlotCovered, type PodCoverageProfile } from "./coverage";
 
 export type GapInputShift = {
   podNumber: number;
@@ -49,6 +55,59 @@ export function findGaps(
           podNumber: pod,
           startMs: yearStartUtcMs + runStart * 3_600_000,
           endMs: yearStartUtcMs + h * 3_600_000,
+          durationHours: h - runStart,
+        });
+        runStart = null;
+      }
+    }
+    if (runStart !== null) {
+      out.push({
+        podNumber: pod,
+        startMs: yearStartUtcMs + runStart * 3_600_000,
+        endMs: yearStartUtcMs + totalHours * 3_600_000,
+        durationHours: totalHours - runStart,
+      });
+    }
+  }
+  out.sort((a, b) => a.startMs - b.startMs || a.podNumber - b.podNumber);
+  return out;
+}
+
+/**
+ * Coverage-aware variant of `findGaps`. For each pod, an hour counts as a gap
+ * only when (a) it is inside the pod's coverage window AND (b) no shift covers
+ * it. Off-hours and off-days produce neither shifts nor gaps.
+ */
+export function findGapsWithCoverage(
+  shifts: GapInputShift[],
+  profiles: PodCoverageProfile[],
+  yearStartUtcMs: number,
+  totalHours: number,
+): GapInterval[] {
+  const out: GapInterval[] = [];
+  for (const profile of profiles) {
+    const pod = profile.podNumber;
+    const covered = new Uint8Array(totalHours);
+    for (const s of shifts) {
+      if (s.podNumber !== pod) continue;
+      const startIdx = Math.floor((s.startMs - yearStartUtcMs) / 3_600_000);
+      for (let h = 0; h < s.durationHours; h++) {
+        const idx = startIdx + h;
+        if (idx >= 0 && idx < totalHours) covered[idx] = 1;
+      }
+    }
+    let runStart: number | null = null;
+    for (let h = 0; h < totalHours; h++) {
+      const hourUtcMs = yearStartUtcMs + h * 3_600_000;
+      const required = isSlotCovered(profile, hourUtcMs, 1);
+      const isGap = required && covered[h] === 0;
+      if (isGap) {
+        if (runStart === null) runStart = h;
+      } else if (runStart !== null) {
+        out.push({
+          podNumber: pod,
+          startMs: yearStartUtcMs + runStart * 3_600_000,
+          endMs: hourUtcMs,
           durationHours: h - runStart,
         });
         runStart = null;
