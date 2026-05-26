@@ -15,6 +15,11 @@ import DayScheduleDrawer from "@/components/DayScheduleDrawer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buildMonthGrid, computeMonthGaps } from "@shared/monthGrid";
 import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
+import {
+  defaultCoverageProfile,
+  isInsideCoverage,
+  type PodCoverageProfile,
+} from "@shared/coverage";
 
 export default function HeatMap() {
   const { data: settings } = trpc.settings.get.useQuery();
@@ -52,6 +57,27 @@ export default function HeatMap() {
     [allTimeOff, engineerNameById],
   );
   const podCount = settings?.podCount ?? 1;
+  const { data: podProfilesRaw = [] } = trpc.pods.list.useQuery();
+  const podProfiles = useMemo<PodCoverageProfile[]>(() => {
+    const byPod = new Map<number, PodCoverageProfile>();
+    for (const p of podProfilesRaw) {
+      byPod.set(p.podNumber, {
+        podNumber: p.podNumber,
+        daysOfWeek: p.daysOfWeek,
+        coverageStartHour: p.coverageStartHour,
+        coverageHoursPerDay: p.coverageHoursPerDay,
+        anchorTimezone: p.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+      });
+    }
+    return Array.from({ length: podCount }, (_, i) => {
+      const podNumber = i + 1;
+      return byPod.get(podNumber) ?? defaultCoverageProfile(podNumber);
+    });
+  }, [podProfilesRaw, podCount]);
+  const profilesInScope = useMemo(
+    () => (selectedPod === "all" ? podProfiles : podProfiles.filter((p) => p.podNumber === selectedPod)),
+    [podProfiles, selectedPod],
+  );
   const shifts = useMemo(
     () => (selectedPod === "all" ? allShifts : allShifts.filter((s) => s.podNumber === selectedPod)),
     [allShifts, selectedPod],
@@ -208,7 +234,7 @@ export default function HeatMap() {
         {/* Heat map grid */}
         {viewMode === "year" ? (
           <div className="card-elegant p-5 overflow-auto">
-            <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} timeOffByDay={timeOffByDay} />
+            <HeatGrid heatmap={heatmap} podCount={requiredCoverage} year={year} timeOffByDay={timeOffByDay} podProfiles={profilesInScope} />
           </div>
         ) : (
           <div className="card-elegant p-5">
@@ -449,11 +475,13 @@ function HeatGrid({
   podCount,
   year,
   timeOffByDay,
+  podProfiles,
 }: {
   heatmap: { grid: number[][]; totalDays: number; startUtc: number };
   podCount: number;
   year: number;
   timeOffByDay: TimeOffByDay;
+  podProfiles: PodCoverageProfile[];
 }) {
   // Rows = 24 hours, Columns = 365 days
   // Group days by month for separators.
@@ -540,6 +568,22 @@ function HeatGrid({
             {Array.from({ length: heatmap.totalDays }, (_, d) =>
               Array.from({ length: 24 }, (_, h) => {
                 const v = heatmap.grid[d][h];
+                const cellMs = heatmap.startUtc + d * 86_400_000 + h * 3_600_000;
+                // A cell is "required" if ANY in-scope pod expects coverage at
+                // this UTC hour. Otherwise we render it as a gray non-coverage tile.
+                const covered = podProfiles.some((p) => isInsideCoverage(cellMs, p));
+                if (!covered) {
+                  return (
+                    <div
+                      key={`${d}-${h}`}
+                      style={{
+                        background:
+                          "repeating-linear-gradient(45deg, oklch(0.92 0 0 / 0.5) 0, oklch(0.92 0 0 / 0.5) 1px, transparent 1px, transparent 3px)",
+                      }}
+                      title={`Day ${d + 1}, ${String(h).padStart(2, "0")}:00 — outside coverage window (not required)`}
+                    />
+                  );
+                }
                 return (
                   <div
                     key={`${d}-${h}`}

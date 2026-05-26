@@ -37,6 +37,16 @@ import {
   upsertPodCoverage,
 } from "./db";
 import type { PodCoverageProfile } from "../shared/coverage";
+import { defaultCoverageProfile } from "../shared/coverage";
+import { findGapsWithCoverage } from "../shared/gaps";
+import {
+  suggestFixForGap,
+  suggestFixesForGaps,
+  type SuggesterEngineer,
+  type SuggesterGap,
+  type SuggesterShift,
+  type SuggesterTimeOff,
+} from "../shared/gapSuggester";
 import { assignTimeOff, generateSchedule } from "./scheduler";
 import { rebalancePods } from "../shared/rebalance";
 import { invokeLLM } from "./_core/llm";
@@ -498,6 +508,146 @@ export const appRouter = router({
           byDay[day].holiday.sort();
         }
         return { year, byDay };
+      }),
+  }),
+
+  // ====== Gaps (Suggest Fix + Auto-fix small) ======
+  gaps: router({
+    /**
+     * Suggest a single engineer + start time to fill `gap`.
+     * The gap is provided by the client (rather than recomputed server-side) so
+     * the suggestion matches what the user currently sees, including filters.
+     */
+    suggestFix: publicProcedure
+      .input(
+        z.object({
+          podNumber: z.number().int().min(1).max(3),
+          startMs: z.number().int(),
+          durationHours: z.number().int().min(1).max(168),
+          year: z.number().int(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const podRows = await listPodCoverage();
+        const profile =
+          podRows.find((r) => r.podNumber === input.podNumber) ??
+          defaultCoverageProfile(input.podNumber);
+        const gap: SuggesterGap = {
+          podNumber: input.podNumber,
+          startMs: input.startMs,
+          endMs: input.startMs + input.durationHours * 3_600_000,
+          durationHours: input.durationHours,
+          anchorTimezone: profile.anchorTimezone as SuggesterGap["anchorTimezone"],
+        };
+        const engineers = (await listEngineers()).map<SuggesterEngineer>((e) => ({
+          id: e.id,
+          name: e.name,
+          podNumber: e.podNumber ?? 0,
+          timezone: e.timezone as SuggesterEngineer["timezone"],
+          active: !!e.active,
+          weekdayOnly: (e.softPreferences as { weekdayOnly?: boolean } | null)?.weekdayOnly === true,
+        }));
+        const existingShifts: SuggesterShift[] = (await listShiftsForYear(input.year)).map((s) => ({
+          engineerId: s.engineerId,
+          startMs: s.startMs,
+          durationHours: s.durationHours,
+        }));
+        const timeOff: SuggesterTimeOff[] = (await listTimeOffForYear(input.year)).map((t) => ({
+          engineerId: t.engineerId,
+          date: t.date,
+        }));
+        const result = suggestFixForGap(gap, engineers, existingShifts, timeOff);
+        return result;
+      }),
+
+    /**
+     * Auto-fix every gap <= maxHours by inserting manual-override shifts.
+     * Returns a summary of how many were filled, how many were skipped, and why.
+     */
+    autoFixSmall: publicProcedure
+      .input(
+        z.object({
+          year: z.number().int(),
+          maxHours: z.number().int().min(1).max(24).default(8),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const podRowsRaw = await listPodCoverage();
+        const settings = await getSettings();
+        if (!settings) throw new Error("Settings not initialised");
+        const podCount = settings.podCount as number;
+        const podProfiles: PodCoverageProfile[] = Array.from({ length: podCount }, (_, i) => {
+          const podNumber = i + 1;
+          const row = podRowsRaw.find((r) => r.podNumber === podNumber);
+          return row
+            ? {
+                podNumber: row.podNumber,
+                daysOfWeek: row.daysOfWeek,
+                coverageStartHour: row.coverageStartHour,
+                coverageHoursPerDay: row.coverageHoursPerDay,
+                anchorTimezone: row.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+              }
+            : defaultCoverageProfile(podNumber);
+        });
+        const startUtc = Date.UTC(input.year, 0, 1);
+        const totalHours = Math.round((Date.UTC(input.year + 1, 0, 1) - startUtc) / 3_600_000);
+        const allShifts = await listShiftsForYear(input.year);
+        const rawGaps = findGapsWithCoverage(allShifts, podProfiles, startUtc, totalHours);
+        const gaps: SuggesterGap[] = rawGaps.map((g) => {
+          const p = podProfiles.find((pp) => pp.podNumber === g.podNumber);
+          return {
+            podNumber: g.podNumber,
+            startMs: g.startMs,
+            endMs: g.endMs,
+            durationHours: g.durationHours,
+            anchorTimezone: (p?.anchorTimezone ?? "EDT") as SuggesterGap["anchorTimezone"],
+          };
+        });
+        const engineers = (await listEngineers()).map<SuggesterEngineer>((e) => ({
+          id: e.id,
+          name: e.name,
+          podNumber: e.podNumber ?? 0,
+          timezone: e.timezone as SuggesterEngineer["timezone"],
+          active: !!e.active,
+          weekdayOnly: (e.softPreferences as { weekdayOnly?: boolean } | null)?.weekdayOnly === true,
+        }));
+        const existingShifts: SuggesterShift[] = allShifts.map((s) => ({
+          engineerId: s.engineerId,
+          startMs: s.startMs,
+          durationHours: s.durationHours,
+        }));
+        const timeOff: SuggesterTimeOff[] = (await listTimeOffForYear(input.year)).map((t) => ({
+          engineerId: t.engineerId,
+          date: t.date,
+        }));
+        const { fills, unfilled } = suggestFixesForGaps(
+          gaps,
+          engineers,
+          existingShifts,
+          timeOff,
+          input.maxHours,
+        );
+        for (const fill of fills) {
+          await createShift({
+            engineerId: fill.engineer.id,
+            podNumber: gaps.find((g) => g.startMs === fill.startMs)?.podNumber ?? 1,
+            startMs: fill.startMs,
+            durationHours: fill.durationHours,
+            manualOverride: true,
+            scheduleYear: input.year,
+          });
+        }
+        return {
+          filled: fills.length,
+          unfilled: unfilled.length,
+          totalCandidates: gaps.length,
+          details: fills.map((f) => ({
+            engineerId: f.engineer.id,
+            engineerName: f.engineer.name,
+            startMs: f.startMs,
+            durationHours: f.durationHours,
+          })),
+        };
       }),
   }),
 

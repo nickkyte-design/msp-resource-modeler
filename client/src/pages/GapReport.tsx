@@ -23,9 +23,10 @@ import { findGapsWithCoverage, clipGapsToWindow } from "@shared/gaps";
 import { defaultCoverageProfile, requiredHoursInRange, type PodCoverageProfile } from "@shared/coverage";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
 import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
-import { AlertTriangle, ArrowRight, CheckCircle2, Download } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Download, Sparkles, Wand2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 
 type Gap = {
   podNumber: number;
@@ -46,6 +47,8 @@ export default function GapReport() {
   const [selectedPod, setSelectedPod] = useState<number | "all">("all");
   // Time-range filter: "all" = full year, or a 0..11 month index in the display TZ.
   const [selectedMonth, setSelectedMonth] = useState<number | "all">("all");
+  // Severity filter: only show gaps at or above the threshold.
+  const [minSeverity, setMinSeverity] = useState<0 | 4 | 8 | 16>(0);
 
   const allShifts = scheduleData?.shifts ?? [];
   const allTimeOff = scheduleData?.timeOff ?? [];
@@ -68,6 +71,57 @@ export default function GapReport() {
     [allTimeOff, engineerNameById],
   );
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
+  const suggestFixMutation = trpc.gaps.suggestFix.useMutation();
+  const autoFixMutation = trpc.gaps.autoFixSmall.useMutation({
+    onSuccess: (res) => {
+      if (res.filled > 0) {
+        toast.success(`Auto-fix complete`, {
+          description: `Filled ${res.filled} of ${res.totalCandidates} gaps with manual overrides. ${res.unfilled} could not be filled (cap or no eligible engineer).`,
+        });
+      } else {
+        toast.warning(`Auto-fix found no fillable gaps`, {
+          description: `None of the ≤ 8h gaps had an engineer with enough cap headroom and timezone match.`,
+        });
+      }
+      utils.schedule.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(`Auto-fix failed`, { description: err.message });
+    },
+  });
+
+  async function handleSuggest(g: Gap) {
+    const t = toast.loading(`Looking for someone to cover this ${g.durationHours}h gap…`);
+    try {
+      const result = await suggestFixMutation.mutateAsync({
+        podNumber: g.podNumber,
+        startMs: g.startMs,
+        durationHours: g.durationHours,
+        year,
+      });
+      toast.dismiss(t);
+      if (!result) {
+        toast.warning(`No eligible engineer`, {
+          description: `Every Pod ${g.podNumber} engineer is either at cap, on PTO, or has a hard weekday block.`,
+        });
+        return;
+      }
+      toast.success(`Suggested: ${result.engineer.name}`, {
+        description: result.reasons.join(" • "),
+        action: {
+          label: "Open day to confirm",
+          onClick: () => {
+            const sp = new Date(g.startMs);
+            openDay(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), g.podNumber);
+          },
+        },
+      });
+    } catch (e) {
+      toast.dismiss(t);
+      toast.error(`Suggest fix failed`, { description: (e as Error).message });
+    }
+  }
 
   // Day Schedule drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -126,9 +180,21 @@ export default function GapReport() {
   const visibleGaps = useMemo(() => {
     const podFiltered =
       selectedPod === "all" ? gaps : gaps.filter((g) => g.podNumber === selectedPod);
-    if (selectedMonth === "all") return podFiltered;
-    return clipGapsToWindow(podFiltered, windowStartMs, windowEndMs);
-  }, [gaps, selectedPod, selectedMonth, windowStartMs, windowEndMs]);
+    const clipped =
+      selectedMonth === "all" ? podFiltered : clipGapsToWindow(podFiltered, windowStartMs, windowEndMs);
+    if (minSeverity === 0) return clipped;
+    return clipped.filter((g) => g.durationHours >= minSeverity);
+  }, [gaps, selectedPod, selectedMonth, windowStartMs, windowEndMs, minSeverity]);
+
+  // Day-of-week histogram: total gap hours per weekday (Sun..Sat).
+  const gapHoursByDow = useMemo(() => {
+    const arr = [0, 0, 0, 0, 0, 0, 0];
+    for (const g of visibleGaps) {
+      const dow = new Date(g.startMs).getUTCDay();
+      arr[dow] += g.durationHours;
+    }
+    return arr;
+  }, [visibleGaps]);
 
   const totalGapHours = visibleGaps.reduce((acc, g) => acc + g.durationHours, 0);
   const podsInScope = selectedPod === "all" ? podCount : 1;
@@ -242,6 +308,32 @@ export default function GapReport() {
                 </button>
               ))}
             </div>
+            <Select
+              value={String(minSeverity)}
+              onValueChange={(v) => setMinSeverity(Number(v) as 0 | 4 | 8 | 16)}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">All sizes</SelectItem>
+                <SelectItem value="4">≥ 4h</SelectItem>
+                <SelectItem value="8">≥ 8h</SelectItem>
+                <SelectItem value="16">≥ 16h</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => autoFixMutation.mutate({ year, maxHours: 8 })}
+              disabled={
+                autoFixMutation.isPending ||
+                visibleGaps.filter((g) => g.durationHours <= 8).length === 0
+              }
+              title="Insert manual-override shifts for every gap ≤ 8h that has an eligible engineer"
+            >
+              <Wand2 className="h-4 w-4" />
+              Auto-fix ≤ 8h
+            </Button>
             <Button variant="outline" onClick={downloadCsv} disabled={visibleGaps.length === 0}>
               <Download className="h-4 w-4" />
               CSV
@@ -270,6 +362,19 @@ export default function GapReport() {
             tone={coveragePct >= 99.9 ? "good" : coveragePct >= 95 ? "warn" : "bad"}
           />
         </div>
+
+        {/* Day-of-week heat strip */}
+        {allShifts.length > 0 && visibleGaps.length > 0 && (
+          <div className="card-elegant p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold tracking-tight">Gap hours by day of week</h3>
+              <span className="text-xs text-muted-foreground">
+                {totalGapHours}h total
+              </span>
+            </div>
+            <DayOfWeekStrip hoursByDow={gapHoursByDow} />
+          </div>
+        )}
 
         {/* Calendar visual */}
         {allShifts.length > 0 && (
@@ -446,22 +551,71 @@ export default function GapReport() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className="font-normal">
-                            Pod {g.podNumber}
-                          </Badge>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <Badge variant="secondary" className="font-normal">
+                              Pod {g.podNumber}
+                            </Badge>
+                            {(() => {
+                              const dayKey = `${sp.year}-${String(sp.month + 1).padStart(2, "0")}-${String(sp.day).padStart(2, "0")}`;
+                              const entry = timeOffByDay[dayKey];
+                              if (!entry) return null;
+                              const ptoCount = entry.pto?.length ?? 0;
+                              const holCount = entry.holiday?.length ?? 0;
+                              if (ptoCount === 0 && holCount === 0) return null;
+                              const label =
+                                ptoCount > 0 && holCount > 0
+                                  ? `${ptoCount} PTO · ${holCount} hol`
+                                  : ptoCount > 0
+                                    ? `${ptoCount} PTO`
+                                    : `${holCount} holiday`;
+                              const tooltip = [
+                                ptoCount > 0 ? `PTO: ${entry.pto.join(", ")}` : null,
+                                holCount > 0 ? `Holiday: ${entry.holiday.join(", ")}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" • ");
+                              return (
+                                <Badge
+                                  variant="outline"
+                                  title={tooltip}
+                                  className={
+                                    ptoCount > 0 && holCount > 0
+                                      ? "border-amber-500/50 text-amber-700 dark:text-amber-400 text-[10px] font-normal"
+                                      : ptoCount > 0
+                                        ? "border-amber-500/50 text-amber-700 dark:text-amber-400 text-[10px] font-normal"
+                                        : "border-violet-500/50 text-violet-700 dark:text-violet-400 text-[10px] font-normal"
+                                  }
+                                >
+                                  {label}
+                                </Badge>
+                              );
+                            })()}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right pr-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              openDay(sp.year, sp.month, sp.day, g.podNumber);
-                            }}
-                          >
-                            Fix
-                            <ArrowRight className="h-3 w-3 ml-1" />
-                          </Button>
+                          <div className="inline-flex items-center gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              title="Suggest an engineer to fill this gap"
+                              onClick={() => handleSuggest(g)}
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              Suggest
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => {
+                                openDay(sp.year, sp.month, sp.day, g.podNumber);
+                              }}
+                            >
+                              Fix
+                              <ArrowRight className="h-3 w-3 ml-1" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -765,4 +919,39 @@ function dayColor(gapHours: number, podsInScope: number) {
   if (t < 0.35) return "oklch(0.82 0.13 60 / 0.85)";
   if (t < 0.7) return "oklch(0.65 0.18 40)";
   return "oklch(0.5 0.2 25)";
+}
+
+
+function DayOfWeekStrip({ hoursByDow }: { hoursByDow: number[] }) {
+  const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const max = Math.max(1, ...hoursByDow);
+  return (
+    <div className="grid grid-cols-7 gap-1.5">
+      {labels.map((lbl, i) => {
+        const h = hoursByDow[i];
+        const intensity = h / max;
+        const bg =
+          h === 0
+            ? "bg-muted/40"
+            : intensity > 0.66
+              ? "bg-destructive/80 text-white"
+              : intensity > 0.33
+                ? "bg-amber-500/70"
+                : "bg-amber-500/30";
+        return (
+          <div key={lbl} className="flex flex-col items-center gap-1">
+            <div
+              className={`w-full h-10 rounded-md flex items-center justify-center text-xs font-semibold tabular-nums ${bg}`}
+              title={`${lbl}: ${h}h`}
+            >
+              {h > 0 ? `${h}h` : "—"}
+            </div>
+            <div className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+              {lbl}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
