@@ -665,6 +665,154 @@ export const appRouter = router({
       }),
   }),
 
+  // ====== Hiring What-If Simulation ======
+  hiring: router({
+    /**
+     * Run the real scheduler twice — once with the current roster, once with the
+     * roster plus hypothetical hires — and return the gap-hours delta so the user
+     * can make a data-driven hiring decision. Does NOT persist anything.
+     */
+    simulate: publicProcedure
+      .input(
+        z.object({
+          year: z.number().int().optional(),
+          additions: z
+            .array(
+              z.object({
+                podNumber: z.number().int().min(1).max(3),
+                count: z.number().int().min(0).max(10),
+                timezone: timezoneSchema,
+              }),
+            )
+            .max(9),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const settings = await getSettings();
+        if (!settings) throw new Error("Settings not initialized");
+        const year = input.year ?? settings.scheduleYear;
+        const podCount = settings.podCount as 1 | 2 | 3;
+
+        const [allEngineers, coverageRows, manualOverrides, timeOffRows] = await Promise.all([
+          listEngineers(),
+          listPodCoverage(),
+          listManualOverridesForYear(year),
+          listTimeOffForYear(year),
+        ]);
+
+        const podProfiles: PodCoverageProfile[] = coverageRows.map((r) => ({
+          podNumber: r.podNumber,
+          daysOfWeek: r.daysOfWeek,
+          coverageStartHour: r.coverageStartHour,
+          coverageHoursPerDay: r.coverageHoursPerDay,
+          anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+        }));
+
+        const timeOffByEng = new Map<number, Set<string>>();
+        for (const t of timeOffRows) {
+          if (!timeOffByEng.has(t.engineerId)) timeOffByEng.set(t.engineerId, new Set());
+          timeOffByEng.get(t.engineerId)!.add(t.date);
+        }
+
+        const baselineEngineers = allEngineers
+          .filter((e) => e.active)
+          .map((e) => ({
+            id: e.id,
+            active: e.active,
+            podNumber: e.podNumber,
+            softPreferences:
+              (e.softPreferences as SoftPreferences | null) ?? DEFAULT_SOFT_PREFERENCES,
+            hardPreferences:
+              (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
+            timeOffDates: timeOffByEng.get(e.id) ?? new Set<string>(),
+          }));
+
+        const overrideShifts = manualOverrides.map((o) => ({
+          engineerId: o.engineerId,
+          podNumber: o.podNumber,
+          startMs: Number(o.startMs),
+          durationHours: o.durationHours,
+        }));
+
+        const baseline = generateSchedule({
+          year,
+          podCount,
+          engineers: baselineEngineers,
+          existingShifts: overrideShifts,
+          podProfiles,
+        });
+
+        const maxId = allEngineers.reduce((m, e) => Math.max(m, e.id), 0);
+        let nextId = Math.max(maxId, 1_000_000) + 1;
+        const syntheticIds: number[] = [];
+        const hypotheticalEngineers = baselineEngineers.slice();
+        for (const add of input.additions) {
+          for (let i = 0; i < add.count; i++) {
+            const id = nextId++;
+            syntheticIds.push(id);
+            // NOTE: add.timezone is intentionally not forwarded because the
+            // scheduler input type doesn't include timezone — the auto-generator
+            // is timezone-agnostic, pod assignment drives placement. The field
+            // is still accepted by the API for future use and shown in the UI
+            // as informational only.
+            void add.timezone;
+            hypotheticalEngineers.push({
+              id,
+              active: true,
+              podNumber: add.podNumber,
+              softPreferences: DEFAULT_SOFT_PREFERENCES,
+              hardPreferences: DEFAULT_HARD_PREFERENCES,
+              timeOffDates: new Set<string>(),
+            });
+          }
+        }
+
+        const totalAdded = syntheticIds.length;
+        const hypothetical =
+          totalAdded === 0
+            ? baseline
+            : generateSchedule({
+                year,
+                podCount,
+                engineers: hypotheticalEngineers,
+                existingShifts: overrideShifts,
+                podProfiles,
+              });
+
+        const baselinePerPod = baseline.gapHoursPerPod;
+        const hypotheticalPerPod = hypothetical.gapHoursPerPod;
+        const deltaPerPod: Record<number, number> = {};
+        const podSet = new Set<number>();
+        for (const k of Object.keys(baselinePerPod)) podSet.add(Number(k));
+        for (const k of Object.keys(hypotheticalPerPod)) podSet.add(Number(k));
+        const podList: number[] = [];
+        podSet.forEach((p) => podList.push(p));
+        for (const p of podList) {
+          deltaPerPod[p] = (baselinePerPod[p] ?? 0) - (hypotheticalPerPod[p] ?? 0);
+        }
+        const totalDelta = baseline.totalGapHours - hypothetical.totalGapHours;
+
+        return {
+          year,
+          totalAdded,
+          baseline: {
+            totalGapHours: baseline.totalGapHours,
+            gapHoursPerPod: baselinePerPod,
+          },
+          hypothetical: {
+            totalGapHours: hypothetical.totalGapHours,
+            gapHoursPerPod: hypotheticalPerPod,
+          },
+          delta: {
+            totalGapHours: totalDelta,
+            gapHoursPerPod: deltaPerPod,
+            hoursPerNewEngineer:
+              totalAdded > 0 ? Math.round((totalDelta / totalAdded) * 10) / 10 : 0,
+          },
+        };
+      }),
+  }),
+
   ai: router({
     ask: publicProcedure
       .input(

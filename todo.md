@@ -172,3 +172,21 @@
 - [x] Headcount recommender uses sum(per-pod weekly-required-hours) baseline (`computeHeadcountSuggestionForCoverage`)
 - [x] Bump `APP_VERSION` to `2.0.0`
 - [x] Vitest: coverage helper edge cases (incl. IST wrap-past-midnight), gap detector windowing, headcount math (18 new tests, 95 total passing)
+
+## v2.1.2 — 12h minimum rest enforced in scheduler
+
+- [x] `MIN_REST_HOURS = 12` exported from `server/scheduler.ts`
+- [x] `violatesMinRest(history, slotStart, slotDur)` helper used in all three candidate paths (active block, new block, soft-relaxed fallback)
+- [x] Regenerated 2026 schedule: zero sub-12h pairs in May/June (SQL-verified)
+- [x] Vitest: 4 new cases including a year-long pairwise verification (121 total passing)
+
+## v2.2 — Hire/Headcount What-If
+
+- [x] Backend `hiring.simulate` tRPC procedure: accepts `additions[]` (per-pod count + timezone), clones live engineers + appends synthetic ones, runs `generateSchedule`, returns baseline + hypothetical gap-hours per pod
+- [x] Reuse real `podProfiles`, real PTO/Holiday rate (synthetic engineers get no PTO/holiday — clean upper bound), real cap + min-rest rules
+- [x] Frontend Settings widget: per-pod +N stepper (0..10), timezone picker for new hires, "Run simulation" button
+- [x] Result card: baseline total / hypothetical total / delta + per-pod table + "hours saved per new engineer" ratio
+- [x] Loading state (engine takes ~1–3s) + error handling
+- [x] Vitest: router-level hiring.simulate tests (payload shape, additions=0 identity, additions>0 monotonic non-regression, timezone field accepted) + engine-level tests — 4 router + 3 engine tests, 125 total passing
+- [x] Audit fixes: `HireWhatIfSection` uses useEffect (no setState-during-render); timezone field carried through API + UI caption clarifying it's informational; router-level tests use createCaller + vi.mock
+- [x] Bump `APP_VERSION` to 2.2.0

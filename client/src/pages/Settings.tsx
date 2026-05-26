@@ -29,6 +29,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import PodCoverageSection from "@/components/PodCoverageSection";
+import HireWhatIfSection from "@/components/HireWhatIfSection";
 
 export default function SettingsPage() {
   const utils = trpc.useUtils();
@@ -352,6 +353,12 @@ export default function SettingsPage() {
 
         {/* Per-pod coverage profiles */}
         <PodCoverageSection podCount={settings.podCount} />
+
+        {/* Hiring What-If simulation */}
+        <HireWhatIfSection
+          podCount={settings.podCount}
+          scheduleYear={settings.scheduleYear}
+        />
 
         {/* Locations */}
         <section className="card-elegant p-7">
