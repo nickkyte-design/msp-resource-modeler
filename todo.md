@@ -136,3 +136,11 @@
 - [x] Heat Map Month view: small PTO/Holiday dots in each day cell top-right corner
 - [x] Legend chip on Calendar header + Heat Map header + Heat Map Month view (PTO amber / Holiday violet)
 - [x] Vitest: `groupTimeOffByDay` correctness + dedupe + sort (7 new tests, 77 total passing)
+
+## v1.10.1 — PTO/Holiday dots on Gap Report
+
+- [x] Compute `timeOffByDay` on Gap Report from `schedule.list` output (same shape used by Heat Map)
+- [x] Render PTO/Holiday dots on each day cell of the Gap Report 12-month calendar grid (top-right corner)
+- [x] Roll up to a month-header indicator (small dot row beside the month name) when any day in the month has PTO/Holiday
+- [x] Tooltip listing affected engineer names on hover (`{date} — PTO: A, B • Holiday: C`)
+- [x] Add the same PTO/Holiday legend chip already used on Calendar/Heat Map

@@ -21,6 +21,7 @@ import { formatHour, monthName, monthNameShort, toTzParts } from "@/lib/datetime
 import { trpc } from "@/lib/trpc";
 import { findGaps, clipGapsToWindow } from "@shared/gaps";
 import { TIMEZONES, type Timezone } from "@shared/scheduling";
+import { groupTimeOffByDay, type TimeOffByDay } from "@shared/timeOff";
 import { AlertTriangle, ArrowRight, CheckCircle2, Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -46,6 +47,25 @@ export default function GapReport() {
   const [selectedMonth, setSelectedMonth] = useState<number | "all">("all");
 
   const allShifts = scheduleData?.shifts ?? [];
+  const allTimeOff = scheduleData?.timeOff ?? [];
+  const { data: engineers = [] } = trpc.engineers.list.useQuery();
+  const engineerNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const e of engineers) m.set(e.id, e.name);
+    return m;
+  }, [engineers]);
+  const timeOffByDay: TimeOffByDay = useMemo(
+    () =>
+      groupTimeOffByDay(
+        allTimeOff.map((t) => ({
+          engineerId: t.engineerId,
+          engineerName: engineerNameById.get(t.engineerId) ?? `#${t.engineerId}`,
+          kind: t.kind,
+          date: t.date,
+        })),
+      ),
+    [allTimeOff, engineerNameById],
+  );
   const [, navigate] = useLocation();
 
   // Day Schedule drawer state
@@ -233,6 +253,7 @@ export default function GapReport() {
             month={selectedMonth}
             tz={tz}
             podsInScope={podsInScope}
+            timeOffByDay={timeOffByDay}
             onMonthZoom={(month) => setSelectedMonth(month)}
             onDayOpen={(month, day) => {
               // Pick the pod with the largest gap on that day, or 1 if none.
@@ -479,6 +500,7 @@ function GapCalendar({
   month,
   tz,
   podsInScope,
+  timeOffByDay,
   onMonthZoom,
   onDayOpen,
 }: {
@@ -487,6 +509,7 @@ function GapCalendar({
   month: number | "all";
   tz: Timezone;
   podsInScope: number;
+  timeOffByDay: TimeOffByDay;
   onMonthZoom: (month: number) => void;
   onDayOpen: (month: number, day: number) => void;
 }) {
@@ -513,18 +536,28 @@ function GapCalendar({
         <h3 className="text-sm font-semibold tracking-tight">
           {month === "all" ? `Calendar · ${year}` : `${monthName(month)} ${year}`}
         </h3>
-        <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          <span>Less</span>
-          <div className="flex items-center gap-0.5">
-            {[0, 0.1, 0.3, 0.6, 1].map((v) => (
-              <div
-                key={v}
-                className="h-3 w-3 rounded-sm border border-border/40"
-                style={{ background: dayColor(v * 24 * podsInScope, podsInScope) }}
-              />
-            ))}
-          </div>
-          <span>More gap</span>
+        <div className="flex items-center gap-4 text-[10px] uppercase tracking-[0.18em] text-muted-foreground flex-wrap">
+          <span className="flex items-center gap-2">
+            <span>Less</span>
+            <div className="flex items-center gap-0.5">
+              {[0, 0.1, 0.3, 0.6, 1].map((v) => (
+                <div
+                  key={v}
+                  className="h-3 w-3 rounded-sm border border-border/40"
+                  style={{ background: dayColor(v * 24 * podsInScope, podsInScope) }}
+                />
+              ))}
+            </div>
+            <span>More gap</span>
+          </span>
+          <span className="flex items-center gap-3 normal-case tracking-normal pl-3 border-l border-border/60">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500" /> PTO
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-violet-500" /> Holiday
+            </span>
+          </span>
         </div>
       </div>
       <div
@@ -541,6 +574,7 @@ function GapCalendar({
             month={m}
             dayHours={dayHours}
             podsInScope={podsInScope}
+            timeOffByDay={timeOffByDay}
             compact={month === "all"}
             onMonthClick={() => {
               if (month === "all") onMonthZoom(m);
@@ -558,6 +592,7 @@ function MiniMonth({
   month,
   dayHours,
   podsInScope,
+  timeOffByDay,
   compact,
   onMonthClick,
   onDayClick,
@@ -566,6 +601,7 @@ function MiniMonth({
   month: number;
   dayHours: Map<string, number>;
   podsInScope: number;
+  timeOffByDay: TimeOffByDay;
   compact: boolean;
   onMonthClick: () => void;
   onDayClick: (day: number) => void;
@@ -581,6 +617,20 @@ function MiniMonth({
     dayHours.get(`${month}-${i + 1}`) ?? 0,
   ).reduce((a, b) => a + b, 0);
 
+  // Roll-up: count of days in this month that have any PTO / Holiday entries.
+  const monthOff = useMemo(() => {
+    let ptoDays = 0;
+    let holidayDays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const off = timeOffByDay[key];
+      if (!off) continue;
+      if (off.pto.length) ptoDays++;
+      if (off.holiday.length) holidayDays++;
+    }
+    return { ptoDays, holidayDays };
+  }, [timeOffByDay, year, month, daysInMonth]);
+
   return (
     <div
       className={`text-left rounded-md border bg-muted/10 p-3 transition-colors ${
@@ -591,12 +641,26 @@ function MiniMonth({
         type="button"
         onClick={onMonthClick}
         disabled={!compact}
-        className={`flex items-baseline justify-between w-full mb-2 ${compact ? "cursor-pointer" : "cursor-default"}`}
+        className={`flex items-baseline justify-between w-full mb-2 gap-2 ${compact ? "cursor-pointer" : "cursor-default"}`}
       >
-        <div className="text-xs font-semibold tracking-tight">
-          {monthName(month)}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-semibold tracking-tight">
+            {monthName(month)}
+          </span>
+          {(monthOff.ptoDays > 0 || monthOff.holidayDays > 0) && (
+            <span
+              className="inline-flex items-center gap-0.5"
+              title={[
+                monthOff.ptoDays > 0 ? `${monthOff.ptoDays} day${monthOff.ptoDays === 1 ? "" : "s"} w/ PTO` : null,
+                monthOff.holidayDays > 0 ? `${monthOff.holidayDays} day${monthOff.holidayDays === 1 ? "" : "s"} w/ Holiday` : null,
+              ].filter(Boolean).join(" · ")}
+            >
+              {monthOff.ptoDays > 0 && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+              {monthOff.holidayDays > 0 && <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />}
+            </span>
+          )}
         </div>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground tabular-nums">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground tabular-nums shrink-0">
           {monthGapHours === 0 ? "Full" : `${monthGapHours}h gap`}
         </div>
       </button>
@@ -609,6 +673,16 @@ function MiniMonth({
         {cells.map((d, i) => {
           if (d === null) return <div key={i} className="aspect-square" />;
           const h = dayHours.get(`${month}-${d}`) ?? 0;
+          const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const off = timeOffByDay[dateKey];
+          const pto = off?.pto.length ?? 0;
+          const hol = off?.holiday.length ?? 0;
+          const titleParts: string[] = [
+            `${monthName(month)} ${d} — ${h === 0 ? "full coverage" : `${h}h gap`}`,
+          ];
+          if (pto) titleParts.push(`PTO: ${off!.pto.join(", ")}`);
+          if (hol) titleParts.push(`Holiday: ${off!.holiday.join(", ")}`);
+          titleParts.push("(click to inspect)");
           return (
             <button
               type="button"
@@ -617,14 +691,30 @@ function MiniMonth({
                 ev.stopPropagation();
                 onDayClick(d);
               }}
-              className="aspect-square rounded-sm flex items-center justify-center text-[10px] font-medium tabular-nums hover:ring-2 hover:ring-foreground/40 transition-all cursor-pointer"
+              className="relative aspect-square rounded-sm flex items-center justify-center text-[10px] font-medium tabular-nums hover:ring-2 hover:ring-foreground/40 transition-all cursor-pointer"
               style={{
                 background: dayColor(h, podsInScope),
                 color: h > podsInScope * 12 ? "white" : "inherit",
               }}
-              title={`${monthName(month)} ${d} — ${h === 0 ? "full coverage" : `${h}h gap`} (click to inspect)`}
+              title={titleParts.join(" — ")}
             >
               {compact ? "" : d}
+              {(pto > 0 || hol > 0) && (
+                <span
+                  className={`absolute ${compact ? "top-0.5 right-0.5" : "top-1 right-1"} flex items-center gap-0.5 pointer-events-none`}
+                >
+                  {pto > 0 && (
+                    <span
+                      className={`${compact ? "h-1 w-1" : "h-1.5 w-1.5"} rounded-full bg-amber-500 ring-1 ring-background/80`}
+                    />
+                  )}
+                  {hol > 0 && (
+                    <span
+                      className={`${compact ? "h-1 w-1" : "h-1.5 w-1.5"} rounded-full bg-violet-500 ring-1 ring-background/80`}
+                    />
+                  )}
+                </span>
+              )}
             </button>
           );
         })}
