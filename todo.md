@@ -190,3 +190,14 @@
 - [x] Vitest: router-level hiring.simulate tests (payload shape, additions=0 identity, additions>0 monotonic non-regression, timezone field accepted) + engine-level tests — 4 router + 3 engine tests, 125 total passing
 - [x] Audit fixes: `HireWhatIfSection` uses useEffect (no setState-during-render); timezone field carried through API + UI caption clarifying it's informational; router-level tests use createCaller + vi.mock
 - [x] Bump `APP_VERSION` to 2.2.0
+
+## v2.3 — Holiday management
+
+- [x] Schema: `settings.holidaysPerYear` int default 10 + new `holidays` table (id, scheduleYear, date YYYY-MM-DD, label, region)
+- [x] Migration 0007 (`0007_wealthy_blue_marvel.sql`) applied; backwards-compatible default 10 for existing rows
+- [x] db helpers: `listHolidays`, `upsertHoliday`, `deleteHoliday`, `clearHolidaysForYear`, `applyHolidaysToRoster` (idempotent: clears HOLIDAY time-off for year first, then re-inserts)
+- [x] `shared/holidayPresets.ts` with US Federal (11) and India Gazetted (10) 2026 presets + `getHolidayPreset` helper
+- [x] tRPC `holidays.list / upsert / delete / clear / loadPreset / applyToRoster` + `settings.update` accepts `holidaysPerYear`
+- [x] Settings UI: `HolidayManagementSection` — target integer input, add-row form (date + label + region), preset confirm dialog (US/India), per-row delete, target-mismatch warning chip vs. green match chip, Apply-to-Roster button with toast result
+- [x] Vitest: `server/holidays.test.ts` — preset shape (counts, uniqueness, sort order), router-level `loadPreset/upsert/list/delete/clear/applyToRoster` via `vi.mock` of db helpers, idempotency, inactive-engineer exclusion, `settings.update.holidaysPerYear` zod range (10 tests)
+- [x] Bump `APP_VERSION` to 2.3.0 + update timezone test assertion

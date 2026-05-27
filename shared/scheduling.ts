@@ -4,7 +4,7 @@
  */
 
 /** App version surfaced in the UI; bumped each release. */
-export const APP_VERSION = "2.2.0";
+export const APP_VERSION = "2.3.0";
 
 export const TIMEZONES = ["EDT", "PDT", "SGT", "BST", "IST"] as const;
 export type Timezone = (typeof TIMEZONES)[number];

@@ -30,6 +30,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import PodCoverageSection from "@/components/PodCoverageSection";
 import HireWhatIfSection from "@/components/HireWhatIfSection";
+import HolidayManagementSection from "@/components/HolidayManagementSection";
 
 export default function SettingsPage() {
   const utils = trpc.useUtils();
@@ -358,6 +359,12 @@ export default function SettingsPage() {
         <HireWhatIfSection
           podCount={settings.podCount}
           scheduleYear={settings.scheduleYear}
+        />
+
+        {/* Holiday management — canonical date list + apply to roster */}
+        <HolidayManagementSection
+          scheduleYear={settings.scheduleYear}
+          holidaysPerYear={settings.holidaysPerYear ?? 10}
         />
 
         {/* Locations */}

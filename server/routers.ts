@@ -10,20 +10,24 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import {
+  applyHolidaysToRoster,
   bulkInsertShifts,
   bulkInsertTimeOff,
   bulkUpdatePreferences,
   clearAutoShiftsForYear,
+  clearHolidaysForYear,
   clearShiftsForYear,
   clearTimeOffForYear,
   createEngineer,
   createLocation,
   createShift,
   deleteEngineer,
+  deleteHoliday,
   deleteLocation,
   deleteShift,
   getSettings,
   listEngineers,
+  listHolidays,
   listLocations,
   listManualOverridesForYear,
   listPodCoverage,
@@ -34,6 +38,7 @@ import {
   updateEngineer,
   updateLocation,
   updateSettings,
+  upsertHoliday,
   upsertPodCoverage,
 } from "./db";
 import type { PodCoverageProfile } from "../shared/coverage";
@@ -51,6 +56,7 @@ import { assignTimeOff, generateSchedule } from "./scheduler";
 import { rebalancePods } from "../shared/rebalance";
 import { invokeLLM } from "./_core/llm";
 import { AI_SYSTEM_PROMPT, buildAiContext, renderContextMarkdown } from "./ai";
+import { getHolidayPreset } from "../shared/holidayPresets";
 
 const softPrefSchema = z.object({
   weekdayOnly: z.boolean(),
@@ -251,6 +257,7 @@ export const appRouter = router({
           holidaysEnabled: z.boolean().optional(),
           displayTimezone: timezoneSchema.optional(),
           scheduleYear: z.number().int().min(2000).max(2100).optional(),
+          holidaysPerYear: z.number().int().min(0).max(60).optional(),
           defaultEngineerId: z.number().int().nullable().optional(),
         }),
       )
@@ -810,6 +817,75 @@ export const appRouter = router({
               totalAdded > 0 ? Math.round((totalDelta / totalAdded) * 10) / 10 : 0,
           },
         };
+      }),
+  }),
+
+  // ====== Holidays (canonical date list per schedule year) ======
+  holidays: router({
+    list: publicProcedure
+      .input(z.object({ year: z.number().int().optional() }).optional())
+      .query(async ({ input }) => {
+        const settings = await getSettings();
+        const year = input?.year ?? settings?.scheduleYear ?? 2026;
+        return listHolidays(year);
+      }),
+    upsert: publicProcedure
+      .input(
+        z.object({
+          scheduleYear: z.number().int().min(2000).max(2100),
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          label: z.string().min(1).max(80),
+          region: z.enum(["US", "IN", "CUSTOM"]).default("CUSTOM"),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        return upsertHoliday(input);
+      }),
+    delete: publicProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await deleteHoliday(input.id);
+        return { success: true };
+      }),
+    clear: publicProcedure
+      .input(z.object({ year: z.number().int() }))
+      .mutation(async ({ input }) => {
+        await clearHolidaysForYear(input.year);
+        return { success: true };
+      }),
+    loadPreset: publicProcedure
+      .input(
+        z.object({
+          region: z.enum(["US", "IN"]),
+          year: z.number().int(),
+          replace: z.boolean().default(false),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const preset = getHolidayPreset(input.region, input.year);
+        if (preset.length === 0) {
+          return { inserted: 0, total: 0, message: "No preset available for that year" };
+        }
+        if (input.replace) {
+          await clearHolidaysForYear(input.year);
+        }
+        let inserted = 0;
+        for (const entry of preset) {
+          await upsertHoliday({
+            scheduleYear: input.year,
+            date: entry.date,
+            label: entry.label,
+            region: input.region,
+          });
+          inserted += 1;
+        }
+        const total = (await listHolidays(input.year)).length;
+        return { inserted, total, message: "Preset loaded" };
+      }),
+    applyToRoster: publicProcedure
+      .input(z.object({ year: z.number().int() }))
+      .mutation(async ({ input }) => {
+        return applyHolidaysToRoster(input.year);
       }),
   }),
 

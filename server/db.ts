@@ -2,7 +2,9 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   engineers,
+  holidays,
   InsertEngineer,
+  type InsertHoliday,
   InsertLocation,
   InsertSettings,
   InsertShift,
@@ -350,4 +352,93 @@ export async function bulkInsertTimeOff(rows: InsertTimeOff[]) {
     const slice = rows.slice(i, i + BATCH);
     await db.insert(timeOff).values(slice);
   }
+}
+
+// ====== Holidays ======
+export async function listHolidays(year: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(holidays)
+    .where(eq(holidays.scheduleYear, year))
+    .orderBy(asc(holidays.date));
+}
+
+export async function upsertHoliday(row: InsertHoliday) {
+  const db = await getDb();
+  if (!db) return null;
+  // Treat (year, date) as the natural key for de-duplication.
+  const existing = await db
+    .select()
+    .from(holidays)
+    .where(and(eq(holidays.scheduleYear, row.scheduleYear), eq(holidays.date, row.date)))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(holidays).values(row);
+  } else {
+    await db
+      .update(holidays)
+      .set({ label: row.label, region: row.region })
+      .where(eq(holidays.id, existing[0]!.id));
+  }
+  const rows = await db
+    .select()
+    .from(holidays)
+    .where(and(eq(holidays.scheduleYear, row.scheduleYear), eq(holidays.date, row.date)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function deleteHoliday(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(holidays).where(eq(holidays.id, id));
+}
+
+export async function clearHolidaysForYear(year: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(holidays).where(eq(holidays.scheduleYear, year));
+}
+
+/**
+ * Materialize the canonical holiday list into per-engineer time_off rows of kind=HOLIDAY.
+ * Idempotent: clears existing HOLIDAY rows for the year first, then re-inserts.
+ */
+export async function applyHolidaysToRoster(year: number): Promise<{
+  holidaysApplied: number;
+  engineersAffected: number;
+  rowsInserted: number;
+}> {
+  const db = await getDb();
+  if (!db) return { holidaysApplied: 0, engineersAffected: 0, rowsInserted: 0 };
+  const holidayRows = await listHolidays(year);
+  const activeEngineers = (await listEngineers()).filter((e) => e.active);
+  // Reset HOLIDAY time_off for the year so this is idempotent.
+  await clearTimeOffForYear(year, "HOLIDAY");
+  if (holidayRows.length === 0 || activeEngineers.length === 0) {
+    return {
+      holidaysApplied: holidayRows.length,
+      engineersAffected: activeEngineers.length,
+      rowsInserted: 0,
+    };
+  }
+  const toInsert: InsertTimeOff[] = [];
+  for (const eng of activeEngineers) {
+    for (const h of holidayRows) {
+      toInsert.push({
+        engineerId: eng.id,
+        kind: "HOLIDAY",
+        date: h.date,
+        scheduleYear: year,
+      });
+    }
+  }
+  await bulkInsertTimeOff(toInsert);
+  return {
+    holidaysApplied: holidayRows.length,
+    engineersAffected: activeEngineers.length,
+    rowsInserted: toInsert.length,
+  };
 }

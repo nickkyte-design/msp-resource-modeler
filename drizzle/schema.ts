@@ -80,6 +80,8 @@ export const settings = mysqlTable("settings", {
   displayTimezone: varchar("displayTimezone", { length: 8 }).notNull().default("EDT"),
   /** Year that the active schedule covers. */
   scheduleYear: int("scheduleYear").notNull().default(2026),
+  /** Target number of holidays per year (informational; warns when actual count differs). */
+  holidaysPerYear: int("holidaysPerYear").notNull().default(10),
   /** Optional engineer to pin as the "current user" for the "Show only mine" toggle. */
   defaultEngineerId: int("defaultEngineerId"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -155,3 +157,23 @@ export const podCoverage = mysqlTable("podCoverage", {
 
 export type PodCoverage = typeof podCoverage.$inferSelect;
 export type InsertPodCoverage = typeof podCoverage.$inferInsert;
+
+/**
+ * Canonical list of holiday dates for a given schedule year.
+ * Edited from Settings; "Apply to roster" materializes time_off rows of kind=HOLIDAY
+ * for every active engineer on each listed date.
+ */
+export const holidays = mysqlTable("holidays", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleYear: int("scheduleYear").notNull(),
+  /** Calendar date YYYY-MM-DD (interpreted in display timezone). */
+  date: varchar("date", { length: 10 }).notNull(),
+  /** Friendly label, e.g. "New Year's Day". */
+  label: varchar("label", { length: 80 }).notNull(),
+  /** Region tag for preset grouping: 'US' | 'IN' | 'CUSTOM'. */
+  region: varchar("region", { length: 16 }).notNull().default("CUSTOM"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Holiday = typeof holidays.$inferSelect;
+export type InsertHoliday = typeof holidays.$inferInsert;
