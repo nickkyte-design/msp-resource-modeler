@@ -7,7 +7,7 @@
  * Dates are calendar-day strings (YYYY-MM-DD); no timezone implied.
  */
 
-export type HolidayRegion = "US" | "IN" | "CUSTOM";
+export type HolidayRegion = "US" | "IN" | "SG" | "CUSTOM";
 
 export type HolidayPresetEntry = {
   /** Calendar date YYYY-MM-DD. */
@@ -43,6 +43,30 @@ export const INDIA_GAZETTED_HOLIDAYS_2026: HolidayPresetEntry[] = [
   { date: "2026-12-25", label: "Christmas Day" },
 ];
 
+/**
+ * Singapore gazetted public holidays for 2026 per MOM
+ * (https://www.mom.gov.sg/newsroom/press-releases/2025/0616-public-holidays-for-2026).
+ *
+ * Three of the gazetted dates fall on Sunday in 2026; for those we use the
+ * Monday observed-on date instead, since that is the day employees actually
+ * get off and the day on-call rosters skip. The Saturday Hari Raya Puasa
+ * (21 Mar) has no substitution day under Singapore law, so it's listed as-is
+ * — it's still a paid public holiday but a Mon–Fri pod is unaffected.
+ */
+export const SINGAPORE_PUBLIC_HOLIDAYS_2026: HolidayPresetEntry[] = [
+  { date: "2026-01-01", label: "New Year's Day" },
+  { date: "2026-02-17", label: "Chinese New Year" },
+  { date: "2026-02-18", label: "Chinese New Year (Day 2)" },
+  { date: "2026-03-21", label: "Hari Raya Puasa" },
+  { date: "2026-04-03", label: "Good Friday" },
+  { date: "2026-05-01", label: "Labour Day" },
+  { date: "2026-05-27", label: "Hari Raya Haji" },
+  { date: "2026-06-01", label: "Vesak Day (observed)" },
+  { date: "2026-08-10", label: "National Day (observed)" },
+  { date: "2026-11-09", label: "Deepavali (observed)" },
+  { date: "2026-12-25", label: "Christmas Day" },
+];
+
 export function getHolidayPreset(
   region: HolidayRegion,
   year: number,
@@ -53,5 +77,6 @@ export function getHolidayPreset(
   if (year !== 2026) return [];
   if (region === "US") return US_FEDERAL_HOLIDAYS_2026;
   if (region === "IN") return INDIA_GAZETTED_HOLIDAYS_2026;
+  if (region === "SG") return SINGAPORE_PUBLIC_HOLIDAYS_2026;
   return [];
 }

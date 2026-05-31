@@ -3,6 +3,7 @@ import {
   getHolidayPreset,
   US_FEDERAL_HOLIDAYS_2026,
   INDIA_GAZETTED_HOLIDAYS_2026,
+  SINGAPORE_PUBLIC_HOLIDAYS_2026,
 } from "../shared/holidayPresets";
 
 describe("holidayPresets (pure data)", () => {
@@ -26,16 +27,43 @@ describe("holidayPresets (pure data)", () => {
     }
   });
 
+  it("Singapore 2026 preset has 11 unique dates, all in 2026, including Monday substitutions", () => {
+    expect(SINGAPORE_PUBLIC_HOLIDAYS_2026.length).toBe(11);
+    const dates = new Set(SINGAPORE_PUBLIC_HOLIDAYS_2026.map((h) => h.date));
+    expect(dates.size).toBe(SINGAPORE_PUBLIC_HOLIDAYS_2026.length);
+    for (const h of SINGAPORE_PUBLIC_HOLIDAYS_2026) {
+      expect(h.date).toMatch(/^2026-\d{2}-\d{2}$/);
+      expect(h.label.length).toBeGreaterThan(0);
+    }
+    // The three Sunday-gazetted dates must use the Monday observed-on date
+    // (June 1, August 10, November 9) since those are the days the on-call
+    // roster actually skips.
+    const dateList = SINGAPORE_PUBLIC_HOLIDAYS_2026.map((h) => h.date);
+    expect(dateList).toContain("2026-06-01");
+    expect(dateList).toContain("2026-08-10");
+    expect(dateList).toContain("2026-11-09");
+    // And the gazetted Sunday dates themselves must NOT appear (we substituted).
+    expect(dateList).not.toContain("2026-05-31");
+    expect(dateList).not.toContain("2026-08-09");
+    expect(dateList).not.toContain("2026-11-08");
+  });
+
   it("getHolidayPreset returns the expected sets and falls through for other years", () => {
     expect(getHolidayPreset("US", 2026)).toBe(US_FEDERAL_HOLIDAYS_2026);
     expect(getHolidayPreset("IN", 2026)).toBe(INDIA_GAZETTED_HOLIDAYS_2026);
+    expect(getHolidayPreset("SG", 2026)).toBe(SINGAPORE_PUBLIC_HOLIDAYS_2026);
     expect(getHolidayPreset("US", 2027)).toEqual([]);
     expect(getHolidayPreset("IN", 2099)).toEqual([]);
+    expect(getHolidayPreset("SG", 2025)).toEqual([]);
     expect(getHolidayPreset("CUSTOM", 2026)).toEqual([]);
   });
 
   it("dates are sorted chronologically inside each preset", () => {
-    for (const preset of [US_FEDERAL_HOLIDAYS_2026, INDIA_GAZETTED_HOLIDAYS_2026]) {
+    for (const preset of [
+      US_FEDERAL_HOLIDAYS_2026,
+      INDIA_GAZETTED_HOLIDAYS_2026,
+      SINGAPORE_PUBLIC_HOLIDAYS_2026,
+    ]) {
       for (let i = 1; i < preset.length; i += 1) {
         expect(preset[i].date >= preset[i - 1].date).toBe(true);
       }

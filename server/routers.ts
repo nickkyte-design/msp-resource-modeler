@@ -870,7 +870,7 @@ export const appRouter = router({
     loadPreset: publicProcedure
       .input(
         z.object({
-          region: z.enum(["US", "IN"]),
+          region: z.enum(["US", "IN", "SG"]),
           year: z.number().int(),
           replace: z.boolean().default(false),
         }),

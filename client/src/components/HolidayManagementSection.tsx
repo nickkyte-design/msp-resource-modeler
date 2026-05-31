@@ -125,7 +125,7 @@ export default function HolidayManagementSection({
 
   // Preset confirm dialog
   const [confirmPreset, setConfirmPreset] = useState<null | {
-    region: "US" | "IN";
+    region: "US" | "IN" | "SG";
     replace: boolean;
   }>(null);
 
@@ -315,6 +315,7 @@ export default function HolidayManagementSection({
                 <SelectItem value="CUSTOM">Custom</SelectItem>
                 <SelectItem value="US">US Federal</SelectItem>
                 <SelectItem value="IN">India Gazetted</SelectItem>
+                <SelectItem value="SG">Singapore Public</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -348,6 +349,17 @@ export default function HolidayManagementSection({
           >
             <CalendarPlus className="h-3.5 w-3.5" />
             India Gazetted Holidays
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setConfirmPreset({ region: "SG", replace: rows.length > 0 })
+            }
+            disabled={loadPreset.isPending}
+          >
+            <CalendarPlus className="h-3.5 w-3.5" />
+            Singapore Public Holidays
           </Button>
           <span className="text-xs text-muted-foreground ml-2">
             Currently presets are available for 2026 only.
@@ -431,7 +443,9 @@ export default function HolidayManagementSection({
               Load{" "}
               {confirmPreset?.region === "US"
                 ? "US Federal"
-                : "India Gazetted"}{" "}
+                : confirmPreset?.region === "IN"
+                  ? "India Gazetted"
+                  : "Singapore Public"}{" "}
               holidays?
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
@@ -441,7 +455,9 @@ export default function HolidayManagementSection({
                   <span className="font-medium text-foreground">
                     {confirmPreset?.region === "US"
                       ? "United States"
-                      : "India"}
+                      : confirmPreset?.region === "IN"
+                        ? "India"
+                        : "Singapore"}
                   </span>{" "}
                   into the registry.
                 </p>

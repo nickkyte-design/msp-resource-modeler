@@ -230,3 +230,16 @@
 - [x] All other vitest tests still green (151/151)
 - [x] Live schedule regenerated. Apr 27 2026 SGT: eng 14 single 8h shift (was eng 14 7h + eng 15 1h). Pod 3 year totals: 259 shifts × exactly 8h each = 2072h vs theoretical 261 weekdays × 8h = 2088h. The 16h delta is 2 weekdays unfilled; root-causing each one to a specific constraint (PTO collision, min-rest, etc.) is a separate diagnostic exercise. Crucially, **no shift fragmentation remains**: max shift duration = min shift duration = 8h
 - [x] Bump `APP_VERSION` to 2.3.3 + timezone test assertion
+
+## v2.3.4 — Singapore Public Holidays preset
+
+- [x] Added `SINGAPORE_PUBLIC_HOLIDAYS_2026` to `shared/holidayPresets.ts` — 11 entries per MOM gazette, with Monday substitutions for Vesak Day (Jun 1), National Day (Aug 10), and Deepavali (Nov 9) so on-call rosters skip the right day
+- [x] Added `"SG"` to `HolidayRegion` union + `getHolidayPreset` switch
+- [x] Extended zod enum on `holidays.loadPreset` tRPC procedure to accept `"SG"`
+- [x] HolidayManagementSection: new "Singapore Public Holidays" preset button + "Singapore Public" Select option + dialog labels handle SG case
+- [x] New vitest case (4 assertions): SG preset has 11 unique 2026 dates with valid labels, includes the 3 Monday substitutions, and does NOT include the 3 Sunday gazetted dates
+- [x] Extended `getHolidayPreset` test for `"SG"` lookup + 2025 fall-through
+- [x] Extended chronological-sort test to cover SG preset too
+- [x] Full vitest suite green (152 tests / 17 files)
+- [x] Browser-verified: Settings page renders all 3 preset buttons including "Singapore Public Holidays"
+- [x] Bump `APP_VERSION` to 2.3.4 + timezone test assertion
