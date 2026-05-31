@@ -5,6 +5,7 @@ import {
   DEFAULT_SOFT_PREFERENCES,
   type HardPreferences,
   type SoftPreferences,
+  type Timezone,
 } from "../shared/scheduling";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -326,15 +327,19 @@ export const appRouter = router({
         const allEngineers = await listEngineers();
         const activeIds = allEngineers.filter((e) => e.active).map((e) => e.id);
 
-        await clearTimeOffForYear(year);
-        const timeOffRows = assignTimeOff(
+        // v2.5.0: only clear the kind we're about to replace, so canonical
+        // Apply-to-roster HOLIDAY rows survive a regenerate when the random
+        // Holiday toggle is off. Same idea for PTO.
+        if (settings.ptoEnabled) await clearTimeOffForYear(year, "PTO");
+        if (settings.holidaysEnabled) await clearTimeOffForYear(year, "HOLIDAY");
+        const assignedRows = assignTimeOff(
           activeIds,
           year,
           settings.ptoEnabled,
           settings.holidaysEnabled,
         );
         await bulkInsertTimeOff(
-          timeOffRows.map((r) => ({
+          assignedRows.map((r) => ({
             engineerId: r.engineerId,
             kind: r.kind,
             date: r.date,
@@ -342,7 +347,9 @@ export const appRouter = router({
           })),
         );
 
-        // Step 2: build engineer-keyed time-off set.
+        // Step 2: build engineer-keyed time-off set from the *full* table
+        // (canonical Apply-to-roster + just-assigned random rows).
+        const timeOffRows = await listTimeOffForYear(year);
         const timeOffByEng = new Map<number, Set<string>>();
         for (const t of timeOffRows) {
           if (!timeOffByEng.has(t.engineerId)) timeOffByEng.set(t.engineerId, new Set());
@@ -379,6 +386,9 @@ export const appRouter = router({
               hardPreferences:
                 (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
               timeOffDates: timeOffByEng.get(e.id) ?? new Set(),
+              // v2.5.0: pass engineer timezone so the scheduler resolves
+              // time_off date strings against the engineer's local calendar.
+              timezone: e.timezone as Timezone,
             })),
           existingShifts: existingOverrides.map((o) => ({
             engineerId: o.engineerId,
@@ -747,6 +757,8 @@ export const appRouter = router({
             hardPreferences:
               (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
             timeOffDates: timeOffByEng.get(e.id) ?? new Set<string>(),
+            // v2.5.0: engineer timezone drives time-off day matching.
+            timezone: e.timezone as Timezone,
           }));
 
         const overrideShifts = manualOverrides.map((o) => ({
@@ -772,12 +784,11 @@ export const appRouter = router({
           for (let i = 0; i < add.count; i++) {
             const id = nextId++;
             syntheticIds.push(id);
-            // NOTE: add.timezone is intentionally not forwarded because the
-            // scheduler input type doesn't include timezone — the auto-generator
-            // is timezone-agnostic, pod assignment drives placement. The field
-            // is still accepted by the API for future use and shown in the UI
-            // as informational only.
-            void add.timezone;
+            // v2.5.0: forward the hypothetical engineer's timezone so the
+            // scheduler can resolve any (synthetic) time-off they might have
+            // against their local calendar. In practice hypothetical engineers
+            // start with an empty timeOffDates set, but the field is now
+            // semantically meaningful and the API contract is honored.
             hypotheticalEngineers.push({
               id,
               active: true,
@@ -785,6 +796,7 @@ export const appRouter = router({
               softPreferences: DEFAULT_SOFT_PREFERENCES,
               hardPreferences: DEFAULT_HARD_PREFERENCES,
               timeOffDates: new Set<string>(),
+              timezone: add.timezone as Timezone,
             });
           }
         }

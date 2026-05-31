@@ -24,9 +24,11 @@ import {
   PTO_DAYS_PER_YEAR,
   PREFERRED_SHIFT_HOURS,
   SHIFTS_PER_BLOCK,
+  TIMEZONE_OFFSETS,
   type HardPreferences,
   type ShiftBlock,
   type SoftPreferences,
+  type Timezone,
 } from "../shared/scheduling";
 import {
   coverageWindowsInRange,
@@ -51,8 +53,18 @@ export interface SchedulerEngineerInput {
   podNumber: number | null;
   softPreferences: SoftPreferences;
   hardPreferences: HardPreferences;
-  /** YYYY-MM-DD strings the engineer is unavailable. */
+  /**
+   * YYYY-MM-DD strings the engineer is unavailable.
+   * Interpreted in `timezone` (v2.5.0): a date "2026-07-04" means the engineer
+   * is off during the 24h covering Jul 4 in their local timezone, not UTC.
+   */
   timeOffDates: Set<string>;
+  /**
+   * v2.5.0: engineer's home timezone, used to resolve `timeOffDates` against
+   * each slot's start instant. Defaults to "UTC" for back-compat with callers
+   * that don't supply it, which preserves pre-v2.5.0 (UTC-day) semantics.
+   */
+  timezone?: Timezone;
 }
 
 export interface SchedulerInput {
@@ -88,6 +100,29 @@ function toDateKey(d: Date): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * v2.5.0: Convert a UTC ms instant to a YYYY-MM-DD string in a specific
+ * timezone. Used so a time-off row dated `2026-07-04` for a PDT engineer
+ * matches the slot whose PDT local date is Jul 4 (UTC Jul 4 07:00 → Jul 5 07:00),
+ * not the slot whose UTC date is Jul 4. This is the engineer-anchored holiday
+ * semantics: a HOLIDAY/PTO row dated D for engineer E means "E is unavailable
+ * during E's local D."
+ */
+function toLocalDateKey(ms: number, tz: Timezone): string {
+  const offsetMs = TIMEZONE_OFFSETS[tz] * 60 * 60 * 1000;
+  return toDateKey(new Date(ms + offsetMs));
+}
+
+/**
+ * Resolve the engineer's local date key for a slot start instant. If the
+ * engineer has no timezone set, fall back to UTC (pre-v2.5.0 behavior).
+ */
+function localDayKey(eng: SchedulerEngineerInput, slotStartMs: number): string {
+  return eng.timezone
+    ? toLocalDateKey(slotStartMs, eng.timezone)
+    : toDateKey(new Date(slotStartMs));
 }
 
 /** Year boundaries in UTC ms. */
@@ -372,8 +407,9 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
             day < block.endDay &&
             block.slotIdx === slot
           ) {
-            // Check this specific day isn't a time-off day.
-            if (eng.timeOffDates.has(dayKey)) continue;
+            // Check this specific day isn't a time-off day, anchored in the
+            // engineer's own timezone (v2.5.0).
+            if (eng.timeOffDates.has(localDayKey(eng, slotStartMs))) continue;
             // Check hard preference for this weekday.
             if (eng.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
             // Check rolling 168h cap.
@@ -422,7 +458,7 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
             if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
             // Check soft preference: weekdayOnly => skip Sat/Sun if alternatives exist.
             // (we'll still allow if needed, since this is soft)
-            if (candidate.timeOffDates.has(dayKey)) continue;
+            if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
             // Check rolling cap.
             if (
               hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
@@ -470,7 +506,7 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
               continue;
             }
             if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
-            if (candidate.timeOffDates.has(dayKey)) continue;
+            if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
             if (
               hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
                 slotDuration >

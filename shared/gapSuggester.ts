@@ -9,7 +9,7 @@
  *  5. Soft tiebreakers: timezone match with anchor TZ, lowest existing hours, weekday-only preference
  */
 
-import type { Timezone } from "./scheduling";
+import { TIMEZONE_OFFSETS, type Timezone } from "./scheduling";
 
 export type SuggesterEngineer = {
   id: number;
@@ -90,14 +90,31 @@ export function hoursInRange(
   return total;
 }
 
-/** True if engineer is on PTO/holiday on the day containing gapStartMs (UTC). */
+/**
+ * Resolve `ms` to a YYYY-MM-DD string in the supplied timezone. Without a tz
+ * (legacy callers / pre-v2.5.0 data), falls back to UTC so behavior is
+ * unchanged for callers that have not opted in.
+ */
+function toLocalDateKey(ms: number, tz?: Timezone): string {
+  const offsetHours = tz ? TIMEZONE_OFFSETS[tz] : 0;
+  const offsetMs = offsetHours * 3_600_000;
+  const d = new Date(ms + offsetMs);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * True if engineer is on PTO/holiday on the day containing `gapStartMs`,
+ * resolved against the engineer's local timezone when supplied. v2.5.0:
+ * `engineerTimezone` is optional for back-compat; when omitted the day key is
+ * computed in UTC (the pre-2.5.0 behavior).
+ */
 export function isEngineerOffOnGapDay(
   timeOff: SuggesterTimeOff[],
   engineerId: number,
   gapStartMs: number,
+  engineerTimezone?: Timezone,
 ): boolean {
-  const d = new Date(gapStartMs);
-  const dayKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  const dayKey = toLocalDateKey(gapStartMs, engineerTimezone);
   return timeOff.some((t) => t.engineerId === engineerId && t.date === dayKey);
 }
 
@@ -128,7 +145,7 @@ export function suggestFixForGap(
 
   const scored: SuggesterResult[] = [];
   for (const e of podMatch) {
-    if (isEngineerOffOnGapDay(timeOff, e.id, gap.startMs)) continue;
+    if (isEngineerOffOnGapDay(timeOff, e.id, gap.startMs, e.timezone)) continue;
     const priorHours = hoursInRange(existingShifts, e.id, windowStart, windowEnd);
     if (priorHours + gap.durationHours > ROLLING_CAP_HOURS) continue;
     // Soft weekday-only constraint

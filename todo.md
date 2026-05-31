@@ -287,3 +287,26 @@
 - [x] Vitest: 4 new cases in `server/holidays.test.ts` — empty-registry math (32 region rows / 27 unique dates → 54 time-off rows for 2 engineers), idempotency, CUSTOM-preservation + stale-label fixup, zod year range. Mock updated to mirror the new `(year, date, region)` key + per-engineer dedupe.
 - [x] Bump `APP_VERSION` to 2.4.1 + timezone test assertion. 161/161 tests passing.
 - [x] Browser-verified live on Settings: button + tooltip render, sidebar shows v2.4.1.
+
+## v2.5.0 — Timezone-aware time-off matching
+
+- [ ] Scheduler: per-slot `dayKey` for engineer E uses E's timezone, not UTC. PDT engineer "off Jul 4" = unavailable Jul 4 07:00 UTC → Jul 5 07:00 UTC.
+- [ ] Pass `engineer.timezone` into `SchedulerEngineerInput` (currently only `timeOffDates` is in scope).
+- [ ] Add `toLocalDateKey(ms, timezone)` helper in `shared/coverage.ts` (mirrors `toDateKey` but applies a TZ offset).
+- [ ] Audit gaps, gapSuggester, hiring, severity for similar UTC-day assumptions on time_off; update if needed.
+- [ ] New test file `server/scheduler.timeOffTz.test.ts`: PDT engineer Jul 4 PTO, SGT engineer Jan 1 HOLIDAY, IST engineer with multi-day PTO straddling year boundary — all blocked on the right UTC slots.
+- [ ] Full vitest suite still green (regression: existing PTO/holiday tests should still pass if they used UTC-aligned engineers, which is the case for the current test fixtures).
+- [ ] Regenerate live schedule; verify Pod 3 (SGT engineers 14/15) still produces single-shift days.
+- [ ] Bump APP_VERSION to 2.5.0 + timezone test assertion.
+
+## v2.5.0 — Timezone-aware time-off (date-key bug fix)
+
+- [x] `server/scheduler.ts`: new `toLocalDateKey(slotStartMs, timezone)` helper using `TIMEZONE_OFFSETS`; `isOff` now compares the engineer's *local* date to their `timeOffDates`, not the UTC date
+- [x] `SchedulerEngineerInput` extended with `timezone?: TimezoneCode`; `routers.ts` passes `e.timezone` into the scheduler input
+- [x] `shared/gapSuggester.ts`: `isEngineerOffOnGapDay` made timezone-aware via `SuggesterEngineer.timezone` so Suggest-fix / Auto-fix obey the same rule as the bulk scheduler
+- [x] `server/routers.ts` generate flow: only wipe time-off rows for the *kind* we are about to re-assign (`clearTimeOffForYear(year, "PTO" | "HOLIDAY")` gated by toggles), so canonical Apply-to-roster HOLIDAY rows survive a regenerate when the random Holiday toggle is off. `timeOffByEng` now built from `listTimeOffForYear` after insertion to include all surviving + just-assigned rows.
+- [x] Vitest `server/scheduler.timeOffTz.test.ts` (10 cases): PDT engineer with Jul 4 PDT off blocks UTC slots whose PDT date is Jul 4 but not Jul 3 PDT 17:00 (UTC Jul 4 00:00); SGT engineer with Jan 1 SGT off blocks UTC Dec 31 16:00 → Jan 1 16:00 but not Jan 1 16:00 UTC (SGT Jan 2); undefined-timezone engineer falls back to UTC behavior; suggester equivalence cases.
+- [x] Vitest `server/scheduler.tzSmoke.test.ts` (3 cases): real `SchedulerEngineerInput` shape from `routers.ts` flow + assignTimeOff helper produces zero PDT-local-Jul-3 shifts when engineer 5 has `timeOffDates = {"2026-07-03"}` and `timezone = "PDT"`
+- [x] Full suite green: 174 tests across 20 files (8 new from this version)
+- [x] Live-DB verified: regenerated schedule has zero shifts for PDT engineers (4, 5, 8) whose PDT-local date matches their canonical Jul 3 holiday row. 2,404 shifts / 99.9% coverage with 11×13 canonical holiday rows honored (vs. 2,451 / 100% when holidays cleared)
+- [x] Bump `APP_VERSION` to 2.5.0 + timezone test assertion
