@@ -902,6 +902,39 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return applyHolidaysToRoster(input.year);
       }),
+    // v2.4.1 — one-click reconcile. Removes only region-preset rows
+    // (US/IN/SG) for the year, reloads them, then re-applies to the
+    // roster. CUSTOM rows are preserved so user-entered dates survive.
+    reapplyAllPresets: publicProcedure
+      .input(z.object({ year: z.number().int().min(2020).max(2100) }))
+      .mutation(async ({ input }) => {
+        const existing = await listHolidays(input.year);
+        const presetIds = existing
+          .filter((h) => h.region === "US" || h.region === "IN" || h.region === "SG")
+          .map((h) => h.id);
+        for (const id of presetIds) {
+          await deleteHoliday(id);
+        }
+        const perRegionLoaded: Record<string, number> = { US: 0, IN: 0, SG: 0 };
+        for (const region of ["US", "IN", "SG"] as const) {
+          const preset = getHolidayPreset(region, input.year);
+          for (const entry of preset) {
+            await upsertHoliday({
+              scheduleYear: input.year,
+              date: entry.date,
+              label: entry.label,
+              region,
+            });
+            perRegionLoaded[region] += 1;
+          }
+        }
+        const applyResult = await applyHolidaysToRoster(input.year);
+        return {
+          presetsLoaded: perRegionLoaded,
+          totalHolidaysAfter: (await listHolidays(input.year)).length,
+          ...applyResult,
+        };
+      }),
   }),
 
   ai: router({

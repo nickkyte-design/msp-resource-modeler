@@ -269,3 +269,20 @@
 - [x] Vitest: `server/holidayRegion.test.ts` — 5 cases covering CUSTOM universality, GLOBAL receives-all, exact region matching, SG-only roster gets zero US holidays, mixed-roster counting
 - [x] Browser-verified: tagged eng 14+15 SG → preview drops from 11×15=165 to 11×13=143 rows; Roster page shows correct Region per row; sidebar reads v2.4.0
 - [x] Bump APP_VERSION to 2.4.0 + timezone test assertion; full suite 157/157
+
+## v2.4.1 — Re-apply all region presets
+
+- [ ] Backend: tRPC mutation `holidays.reapplyAllPresets({ year })` — clears region-preset holidays, reloads US/IN/SG, runs applyHolidaysToRoster, returns per-region counts
+- [ ] Frontend: "Re-apply all region presets" button in HolidayManagementSection with AlertDialog confirm + result toast showing per-region row counts
+- [ ] Custom holidays preserved (only region-preset rows replaced)
+- [ ] Vitest: 3-4 new tests covering reapply idempotency, custom-rows-preserved, per-region count math
+- [ ] Bump APP_VERSION to 2.4.1 + timezone test assertion
+
+## v2.4.1 — Re-apply all region presets (+ overlap-date fix)
+
+- [x] New tRPC mutation `holidays.reapplyAllPresets`: clears all US/IN/SG preset rows for the year, reloads each from canonical lists, then calls `applyHolidaysToRoster`. Returns per-region preset counts + final row stats. Preserves CUSTOM holidays.
+- [x] **Discovered + fixed overlapping-date bug**: `upsertHoliday`'s natural key was `(year, date)`, so when SG and US both defined Jan 1 the second silently *overwrote* the first's region. Changed natural key to `(year, date, region)` so the same calendar date can independently exist for multiple regions. `applyHolidaysToRoster` now dedupes per-engineer per-date so an engineer eligible for Jan 1 via both US and SG still gets only one HOLIDAY row.
+- [x] HolidayManagementSection: "Re-apply all region presets" button next to Apply-to-roster, with AlertDialog confirm and toast result.
+- [x] Vitest: 4 new cases in `server/holidays.test.ts` — empty-registry math (32 region rows / 27 unique dates → 54 time-off rows for 2 engineers), idempotency, CUSTOM-preservation + stale-label fixup, zod year range. Mock updated to mirror the new `(year, date, region)` key + per-engineer dedupe.
+- [x] Bump `APP_VERSION` to 2.4.1 + timezone test assertion. 161/161 tests passing.
+- [x] Browser-verified live on Settings: button + tooltip render, sidebar shows v2.4.1.

@@ -385,24 +385,39 @@ export async function listHolidays(year: number) {
 export async function upsertHoliday(row: InsertHoliday) {
   const db = await getDb();
   if (!db) return null;
-  // Treat (year, date) as the natural key for de-duplication.
+  // v2.4.1: natural key is (year, date, region) so the same calendar date can
+  // exist for multiple regions independently (e.g. Jan 1 is both a US and SG
+  // holiday). applyHolidaysToRoster dedupes the resulting per-engineer rows.
+  const region = row.region ?? "CUSTOM";
   const existing = await db
     .select()
     .from(holidays)
-    .where(and(eq(holidays.scheduleYear, row.scheduleYear), eq(holidays.date, row.date)))
+    .where(
+      and(
+        eq(holidays.scheduleYear, row.scheduleYear),
+        eq(holidays.date, row.date),
+        eq(holidays.region, region),
+      ),
+    )
     .limit(1);
   if (existing.length === 0) {
     await db.insert(holidays).values(row);
   } else {
     await db
       .update(holidays)
-      .set({ label: row.label, region: row.region })
+      .set({ label: row.label })
       .where(eq(holidays.id, existing[0]!.id));
   }
   const rows = await db
     .select()
     .from(holidays)
-    .where(and(eq(holidays.scheduleYear, row.scheduleYear), eq(holidays.date, row.date)))
+    .where(
+      and(
+        eq(holidays.scheduleYear, row.scheduleYear),
+        eq(holidays.date, row.date),
+        eq(holidays.region, region),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }
@@ -471,9 +486,23 @@ export async function applyHolidaysToRoster(year: number): Promise<{
   const toInsert: InsertTimeOff[] = [];
   const perRegion: Record<string, number> = {};
   const engineerHitSet = new Set<number>();
+  // v2.4.1: an engineer might be eligible for the same date via multiple
+  // regions (e.g. Jan 1 from both US and SG presets when their region=GLOBAL).
+  // Dedupe per-engineer per-date so a single HOLIDAY row is emitted.
+  const seen = new Set<string>(); // `${engineerId}|${date}`
   for (const eng of activeEngineers) {
     for (const h of holidayRows) {
       if (!holidayAppliesToEngineer(h.region, eng.region)) continue;
+      const key = `${eng.id}|${h.date}`;
+      if (seen.has(key)) {
+        // Engineer already getting this date from a different region.
+        // Still count it toward the originating region for the perRegion tally
+        // so the user can see that the preset was "considered" even if it
+        // didn't create an additional row.
+        perRegion[h.region] = (perRegion[h.region] ?? 0) + 1;
+        continue;
+      }
+      seen.add(key);
       toInsert.push({
         engineerId: eng.id,
         kind: "HOLIDAY",

@@ -120,12 +120,16 @@ vi.mock("./db", () => ({
       label: string;
       region: string;
     }) => {
+      // v2.4.1: natural key is (year, date, region) so the same date can exist
+      // for multiple regions (e.g. Jan 1 is both US and SG).
       const existing = state.holidays.find(
-        (h) => h.scheduleYear === row.scheduleYear && h.date === row.date,
+        (h) =>
+          h.scheduleYear === row.scheduleYear &&
+          h.date === row.date &&
+          h.region === row.region,
       );
       if (existing) {
         existing.label = row.label;
-        existing.region = row.region;
         return existing;
       }
       const created: FakeHolidayRow = { id: state.nextId++, ...row };
@@ -145,8 +149,16 @@ vi.mock("./db", () => ({
     const holidayRows = state.holidays.filter((h) => h.scheduleYear === year);
     const active = state.engineers.filter((e) => e.active);
     state.insertedTimeOff = [];
+    // v2.4.1: engineers in this fake roster have no region field, so they
+    // implicitly behave like GLOBAL (receive all). Dedupe per-engineer per-date
+    // to mirror the real applyHolidaysToRoster behaviour for overlapping
+    // regional presets (e.g. Jan 1 is both US and SG).
+    const seen = new Set<string>();
     for (const e of active) {
       for (const h of holidayRows) {
+        const key = `${e.id}|${h.date}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         state.insertedTimeOff.push({
           engineerId: e.id,
           kind: "HOLIDAY",
@@ -283,6 +295,67 @@ describe("holidays router (with mocked db)", () => {
     expect((await caller.holidays.list({ year: 2026 })).length).toBe(10);
     await caller.holidays.clear({ year: 2026 });
     expect((await caller.holidays.list({ year: 2026 })).length).toBe(0);
+  });
+
+  // ---- v2.4.1 reapplyAllPresets ----
+  it("reapplyAllPresets loads US+IN+SG = 32 region rows (with overlapping dates dedup'd per-engineer)", async () => {
+    const caller = appRouter.createCaller(ctx());
+    const r = await caller.holidays.reapplyAllPresets({ year: 2026 });
+    expect(r.presetsLoaded).toEqual({ US: 11, IN: 10, SG: 11 });
+    // 32 distinct (date, region) tuples are stored, even though only 27 unique
+    // calendar dates exist (Jan 1, May 1, Dec 25 appear across 2–3 regions).
+    expect(r.totalHolidaysAfter).toBe(32);
+    // 2 active engineers × 27 unique dates = 54 time-off rows after per-engineer dedupe
+    expect(r.rowsInserted).toBe(54);
+    expect(r.engineersAffected).toBe(2);
+  });
+
+  it("reapplyAllPresets is idempotent (running twice nets the same row counts)", async () => {
+    const caller = appRouter.createCaller(ctx());
+    await caller.holidays.reapplyAllPresets({ year: 2026 });
+    const second = await caller.holidays.reapplyAllPresets({ year: 2026 });
+    expect(second.totalHolidaysAfter).toBe(32);
+    expect((await caller.holidays.list({ year: 2026 })).length).toBe(32);
+  });
+
+  it("reapplyAllPresets preserves CUSTOM holidays but replaces region rows", async () => {
+    const caller = appRouter.createCaller(ctx());
+    // Seed: one CUSTOM holiday + one stale US row with a wrong label
+    await caller.holidays.upsert({
+      scheduleYear: 2026,
+      date: "2026-07-04",
+      label: "Pizza Friday",
+      region: "CUSTOM",
+    });
+    await caller.holidays.upsert({
+      scheduleYear: 2026,
+      date: "2026-01-01",
+      label: "WRONG LABEL",
+      region: "US",
+    });
+
+    const r = await caller.holidays.reapplyAllPresets({ year: 2026 });
+    // 32 region presets + 1 custom = 33 holidays
+    expect(r.totalHolidaysAfter).toBe(33);
+
+    const list = await caller.holidays.list({ year: 2026 });
+    const custom = list.find((h) => h.region === "CUSTOM");
+    expect(custom?.label).toBe("Pizza Friday");
+    // The stale US row should have been wiped + recreated with the canonical label
+    const newYearRow = list.find(
+      (h) => h.date === "2026-01-01" && h.region === "US",
+    );
+    expect(newYearRow?.label).not.toBe("WRONG LABEL");
+  });
+
+  it("reapplyAllPresets rejects year outside 2020..2100", async () => {
+    const caller = appRouter.createCaller(ctx());
+    await expect(
+      caller.holidays.reapplyAllPresets({ year: 1999 }),
+    ).rejects.toThrow();
+    await expect(
+      caller.holidays.reapplyAllPresets({ year: 2200 }),
+    ).rejects.toThrow();
   });
 });
 

@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Loader2,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   Wand2,
@@ -132,6 +133,28 @@ export default function HolidayManagementSection({
     onError: (err) => toast.error(err.message),
   });
 
+  // v2.4.1 — one-click "Re-apply all region presets": clears all US/IN/SG
+  // holiday rows, reloads each region's canonical preset, then applies to
+  // the roster. Custom holidays are preserved.
+  const reapplyAll = trpc.holidays.reapplyAllPresets.useMutation({
+    onSuccess: async (res) => {
+      await Promise.all([
+        utils.holidays.list.invalidate(),
+        utils.schedule.list.invalidate(),
+        utils.timeOff.summaryByDay.invalidate(),
+      ]);
+      const presetLine = [
+        `US ${res.presetsLoaded.US}`,
+        `IN ${res.presetsLoaded.IN}`,
+        `SG ${res.presetsLoaded.SG}`,
+      ].join(" · ");
+      toast.success(
+        `Reloaded presets (${presetLine}) and applied ${res.rowsInserted.toLocaleString()} time-off rows to ${res.engineersAffected} engineers.`,
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Local form state
   const [newDate, setNewDate] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -148,6 +171,8 @@ export default function HolidayManagementSection({
     region: "US" | "IN" | "SG";
     replace: boolean;
   }>(null);
+  // v2.4.1 reconcile confirm dialog
+  const [confirmReapplyAll, setConfirmReapplyAll] = useState(false);
 
   const totalCount = rows.length;
   const target = holidaysPerYear;
@@ -308,6 +333,25 @@ export default function HolidayManagementSection({
               <>
                 <Wand2 className="h-4 w-4" />
                 Apply to roster
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            className="bg-card/40"
+            onClick={() => setConfirmReapplyAll(true)}
+            disabled={reapplyAll.isPending}
+            title="Wipes all US/IN/SG preset rows, reloads them from canonical lists, then applies to roster. Custom holidays preserved."
+          >
+            {reapplyAll.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Reconciling…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Re-apply all region presets
               </>
             )}
           </Button>
@@ -578,6 +622,56 @@ export default function HolidayManagementSection({
               disabled={loadPreset.isPending}
             >
               {loadPreset.isPending ? "Loading…" : "Load preset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v2.4.1 Re-apply all region presets confirmation */}
+      <AlertDialog
+        open={confirmReapplyAll}
+        onOpenChange={(open) => !open && setConfirmReapplyAll(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-apply all region presets?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This wipes every <strong>US</strong>, <strong>India</strong>,
+                  and <strong>Singapore</strong> preset holiday row for{" "}
+                  {scheduleYear}, reloads each region's canonical list, then
+                  re-applies them to the roster. Holiday time-off rows are
+                  rebuilt so each engineer only receives the holidays for
+                  their tagged region (Global engineers receive all three).
+                </p>
+                <p className="text-muted-foreground">
+                  Custom holidays (any row tagged{" "}
+                  <code className="text-xs">CUSTOM</code>) are preserved
+                  unchanged. Use this after tagging engineer regions in the
+                  Roster page to reconcile any leftover holiday rows from
+                  before v2.4.0.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reapplyAll.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                reapplyAll.mutate(
+                  { year: scheduleYear },
+                  { onSettled: () => setConfirmReapplyAll(false) },
+                );
+              }}
+              disabled={reapplyAll.isPending}
+            >
+              {reapplyAll.isPending
+                ? "Reconciling…"
+                : "Re-apply all presets"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
