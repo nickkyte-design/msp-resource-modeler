@@ -201,3 +201,13 @@
 - [x] Settings UI: `HolidayManagementSection` — target integer input, add-row form (date + label + region), preset confirm dialog (US/India), per-row delete, target-mismatch warning chip vs. green match chip, Apply-to-Roster button with toast result
 - [x] Vitest: `server/holidays.test.ts` — preset shape (counts, uniqueness, sort order), router-level `loadPreset/upsert/list/delete/clear/applyToRoster` via `vi.mock` of db helpers, idempotency, inactive-engineer exclusion, `settings.update.holidaysPerYear` zod range (10 tests)
 - [x] Bump `APP_VERSION` to 2.3.0 + update timezone test assertion
+
+## v2.3.1 — Shift-window clipping fix
+
+- [x] `clipSlotToCoverage(profile, rawStart, rawEnd)` helper in `server/scheduler.ts` returns `{ startMs, hours }` after merging the union of intersecting daily windows (so 24×7 non-UTC-anchored pods keep their full 8h slot intact)
+- [x] Auto shift placement uses clipped `slotStartMs` + `slotDuration`; cap and min-rest checks operate on the trimmed duration; zero-duration slots short-circuit
+- [x] Manual overrides (`existingShifts` path) untouched — user-placed shifts retain their original boundaries
+- [x] New `server/scheduler.clipping.test.ts` (5 cases): SGT 09–17 Mon–Fri pod emits exactly `weekdays×8h` per year, zero gap hours with 2 engineers (was previously ~16h/Thu), no shift > 8h, every shift inside SGT 09–17 window Mon–Fri, 24×7 EDT pod still emits exact 8h shifts
+- [x] Full vitest suite green (140 tests / 15 files)
+- [x] Live schedule regenerated. DB confirms Jan 7 + Jan 8 2026 SGT now show 7h (eng 14 09–16) + 1h (eng 15 16–17) = 8h. Jan 2026 Pod 3 total = 169h (matches 22 weekdays × 8h minus eng 14's Jan 21 PTO)
+- [x] Bump `APP_VERSION` to 2.3.1 + timezone test assertion

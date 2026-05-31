@@ -28,7 +28,12 @@ import {
   type ShiftBlock,
   type SoftPreferences,
 } from "../shared/scheduling";
-import { defaultCoverageProfile, isSlotCovered, type PodCoverageProfile } from "../shared/coverage";
+import {
+  coverageWindowsInRange,
+  defaultCoverageProfile,
+  isSlotCovered,
+  type PodCoverageProfile,
+} from "../shared/coverage";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -130,6 +135,55 @@ function partitionEngineers(
     podIdx = (podIdx % podCount) + 1;
   }
   return pools;
+}
+
+/**
+ * Intersect a UTC-aligned slot `[rawStartMs, rawEndMs)` with the union of
+ * coverage windows produced by `profile` in that range, then return the
+ * single contiguous covered segment that begins at the earliest covered ms
+ * inside the slot.
+ *
+ * Why a union, not just the first window: when a pod is anchored in a non-UTC
+ * timezone (e.g. EDT, UTC-4) and its daily window crosses anchor-TZ midnight
+ * into the next UTC day, a single UTC slot can intersect *two* consecutive
+ * daily windows (yesterday-EDT's tail + today-EDT's head). For a 24×7 pod
+ * those two intersections together cover the entire slot — we must merge
+ * them before clipping so the legacy 8h shift output is preserved.
+ *
+ * Note: this returns the first contiguous covered run only. If a slot is
+ * bisected by an off-period (e.g. an 8h pod with hours=2 SGT 09–11), we emit
+ * a single shift for the *covered* portion and skip the rest, which is the
+ * correct conservative behavior for the on-call use case.
+ */
+function clipSlotToCoverage(
+  profile: PodCoverageProfile,
+  rawStartMs: number,
+  rawEndMs: number,
+): { startMs: number; hours: number } | null {
+  const windows = coverageWindowsInRange(profile, rawStartMs, rawEndMs);
+  // Compute each window's intersection with the slot, drop empties, sort by
+  // start, then merge contiguous/abutting intervals.
+  const segments = windows
+    .map((w) => ({
+      s: Math.max(rawStartMs, w.startMs),
+      e: Math.min(rawEndMs, w.endMs),
+    }))
+    .filter((seg) => seg.e > seg.s)
+    .sort((a, b) => a.s - b.s);
+  if (segments.length === 0) return null;
+
+  // Merge: extend the current run while the next segment starts at or before
+  // the run's current end (i.e. touching or overlapping).
+  let runStart = segments[0].s;
+  let runEnd = segments[0].e;
+  for (let i = 1; i < segments.length; i++) {
+    if (segments[i].s <= runEnd) {
+      runEnd = Math.max(runEnd, segments[i].e);
+    } else {
+      break; // first contiguous run only
+    }
+  }
+  return { startMs: runStart, hours: (runEnd - runStart) / HOUR_MS };
 }
 
 /**
@@ -245,11 +299,22 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
       // coverage window. Off-hours and off-days are skipped silently and do not
       // contribute to `gapHoursPerPod`.
       for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
-        const slotStartMs = dayStartMs + slot * PREFERRED_SHIFT_HOURS * HOUR_MS;
-        const slotDuration = PREFERRED_SHIFT_HOURS;
-        if (!isSlotCovered(profile, slotStartMs, slotDuration)) {
+        const rawSlotStartMs = dayStartMs + slot * PREFERRED_SHIFT_HOURS * HOUR_MS;
+        const rawSlotEndMs = rawSlotStartMs + PREFERRED_SHIFT_HOURS * HOUR_MS;
+        if (!isSlotCovered(profile, rawSlotStartMs, PREFERRED_SHIFT_HOURS)) {
           continue;
         }
+        // Clip the proposed shift to the intersection of this UTC-aligned slot
+        // and the pod's actual coverage window(s). For partial-day pods whose
+        // window doesn't land on the UTC 00/08/16 slot grid, this prevents the
+        // scheduler from emitting full 8h shifts that only graze the window
+        // (and so consume far more of each engineer's 45h/168h cap than they
+        // should). Manual overrides flow through `existingShifts` untouched.
+        const trim = clipSlotToCoverage(profile, rawSlotStartMs, rawSlotEndMs);
+        if (!trim) continue;
+        const slotStartMs = trim.startMs;
+        const slotDuration = trim.hours;
+        if (slotDuration <= 0) continue;
 
         // Find an engineer with an active block covering this slot today.
         let assigned: SchedulerEngineerInput | null = null;
