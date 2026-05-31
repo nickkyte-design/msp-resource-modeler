@@ -272,11 +272,12 @@
 
 ## v2.4.1 — Re-apply all region presets
 
-- [ ] Backend: tRPC mutation `holidays.reapplyAllPresets({ year })` — clears region-preset holidays, reloads US/IN/SG, runs applyHolidaysToRoster, returns per-region counts
-- [ ] Frontend: "Re-apply all region presets" button in HolidayManagementSection with AlertDialog confirm + result toast showing per-region row counts
-- [ ] Custom holidays preserved (only region-preset rows replaced)
-- [ ] Vitest: 3-4 new tests covering reapply idempotency, custom-rows-preserved, per-region count math
-- [ ] Bump APP_VERSION to 2.4.1 + timezone test assertion
+- [x] Backend: tRPC mutation `holidays.reapplyAllPresets({ year })` — clears region-preset holidays, reloads US/IN/SG, runs applyHolidaysToRoster, returns per-region counts
+- [x] Frontend: "Re-apply all region presets" button in HolidayManagementSection with AlertDialog confirm + result toast showing per-region row counts
+- [x] Custom holidays preserved (only region-preset rows replaced)
+- [x] Vitest: 4 new tests covering reapply idempotency, custom-rows-preserved, per-region count math, and zod year range
+- [x] Bump APP_VERSION to 2.4.1 + timezone test assertion
+- [x] *Bonus*: discovered and fixed overlapping-date bug — changed `upsertHoliday` natural key from `(year, date)` to `(year, date, region)` so Jan 1 can exist independently as a US, SG, and (potential) IN holiday simultaneously; `applyHolidaysToRoster` dedupes per-engineer per-date so an engineer eligible via multiple regions still gets only one HOLIDAY row
 
 ## v2.4.1 — Re-apply all region presets (+ overlap-date fix)
 
