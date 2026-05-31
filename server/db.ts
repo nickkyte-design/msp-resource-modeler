@@ -292,6 +292,23 @@ export async function clearShiftsForYear(year: number) {
   await db.delete(shifts).where(eq(shifts.scheduleYear, year));
 }
 
+/**
+ * Delete every manual-override row for a given year. Returns the number of
+ * rows removed so the caller can surface a toast. Auto-generated shifts are
+ * untouched. Used by the Settings “Clear all manual overrides” action when
+ * the user wants a clean slate (e.g. after Auto-fix ≤8h was over-aggressive).
+ */
+export async function clearAllManualOverridesForYear(year: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const existing = await listManualOverridesForYear(year);
+  if (existing.length === 0) return 0;
+  await db
+    .delete(shifts)
+    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true)));
+  return existing.length;
+}
+
 export async function listManualOverridesForYear(year: number) {
   const db = await getDb();
   if (!db) return [];

@@ -20,7 +20,17 @@ import {
   TIMEZONES,
   type Timezone,
 } from "@shared/scheduling";
-import { CheckCircle2, Info, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, Eraser, Info, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Popover,
   PopoverContent,
@@ -63,6 +73,27 @@ export default function SettingsPage() {
       );
     },
     onError: (err) => toast.error(err.message),
+  });
+
+  // ---- Clear all manual overrides ----
+  // Lives in Settings (not the Gap Report) because it's destructive enough to
+  // warrant being grouped with the schedule generator. We keep it visually
+  // adjacent to Generate Schedule — most users will run it as a pair.
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+  const clearOverrides = trpc.shifts.clearAllOverrides.useMutation({
+    onSuccess: (res) => {
+      utils.schedule.list.invalidate();
+      setOverrideConfirmOpen(false);
+      toast.success(
+        res.cleared === 0
+          ? "No manual overrides to clear."
+          : `Cleared ${res.cleared} manual override${res.cleared === 1 ? "" : "s"}.`,
+      );
+    },
+    onError: (err) => {
+      setOverrideConfirmOpen(false);
+      toast.error(err.message);
+    },
   });
   const createLoc = trpc.locations.create.useMutation({
     onSuccess: () => utils.locations.list.invalidate(),
@@ -350,7 +381,73 @@ export default function SettingsPage() {
               </Button>
             </div>
           </div>
+
+          {/* Clear all manual overrides escape hatch */}
+          <div className="mt-6 pt-6 border-t border-border/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Manual overrides</span> — shifts placed by
+              Suggest-fix, Auto-fix ≤8h, or the day drawer survive a re-generate. Clear them if you
+              want a fully fresh auto-schedule.
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setOverrideConfirmOpen(true)}
+              disabled={clearOverrides.isPending || generateSchedule.isPending || rebalance.isPending}
+              className="text-destructive hover:text-destructive"
+            >
+              {clearOverrides.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Clearing…
+                </>
+              ) : (
+                <>
+                  <Eraser className="h-4 w-4" />
+                  Clear all manual overrides
+                </>
+              )}
+            </Button>
+          </div>
         </section>
+
+        <AlertDialog
+          open={overrideConfirmOpen}
+          onOpenChange={(open) => {
+            if (!clearOverrides.isPending) setOverrideConfirmOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear all manual overrides for {settings.scheduleYear}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently deletes every shift marked as a manual override
+                (created via Suggest-fix, Auto-fix ≤8h, or the day-schedule drawer)
+                for {settings.scheduleYear}. Auto-generated shifts are untouched.
+                You can re-run the gap suggester afterwards if needed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={clearOverrides.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={clearOverrides.isPending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  clearOverrides.mutate({ year: settings.scheduleYear });
+                }}
+              >
+                {clearOverrides.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Clearing…
+                  </>
+                ) : (
+                  "Clear overrides"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Per-pod coverage profiles */}
         <PodCoverageSection podCount={settings.podCount} />

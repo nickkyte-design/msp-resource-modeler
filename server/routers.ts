@@ -29,6 +29,7 @@ import {
   listEngineers,
   listHolidays,
   listLocations,
+  clearAllManualOverridesForYear,
   listManualOverridesForYear,
   listPodCoverage,
   listShiftsForYear,
@@ -460,6 +461,19 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteShift(input.id);
         return { success: true };
+      }),
+
+    /**
+     * Delete every manual-override shift for the given year. Auto-generated
+     * shifts are untouched. Returns `cleared` count for toast messaging.
+     * The Settings UI invokes this via a confirm dialog to give users a
+     * single-click escape hatch after Auto-fix ≤8h has been over-applied.
+     */
+    clearAllOverrides: publicProcedure
+      .input(z.object({ year: z.number().int().min(2000).max(2100) }))
+      .mutation(async ({ input }) => {
+        const cleared = await clearAllManualOverridesForYear(input.year);
+        return { cleared };
       }),
   }),
 

@@ -211,3 +211,12 @@
 - [x] Full vitest suite green (140 tests / 15 files)
 - [x] Live schedule regenerated. DB confirms Jan 7 + Jan 8 2026 SGT now show 7h (eng 14 09–16) + 1h (eng 15 16–17) = 8h. Jan 2026 Pod 3 total = 169h (matches 22 weekdays × 8h minus eng 14's Jan 21 PTO)
 - [x] Bump `APP_VERSION` to 2.3.1 + timezone test assertion
+
+## v2.3.2 — Clear all manual overrides
+
+- [x] `clearAllManualOverridesForYear(year)` db helper returns deleted count
+- [x] tRPC `shifts.clearAllOverrides({ year })` mutation (zod-validated)
+- [x] Settings page: red-tinted outline "Clear all manual overrides" button under Schedule Generation, with AlertDialog confirm + loading state + toast result
+- [x] `server/clearAllOverrides.test.ts` (5 cases): clears 3 overrides, idempotent, leaves auto shifts, year-scoped, rejects out-of-range years
+- [x] Full vitest suite green (145 tests across 16 files)
+- [x] Bump `APP_VERSION` to 2.3.2 + timezone test assertion
