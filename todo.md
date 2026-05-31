@@ -288,16 +288,16 @@
 - [x] Bump `APP_VERSION` to 2.4.1 + timezone test assertion. 161/161 tests passing.
 - [x] Browser-verified live on Settings: button + tooltip render, sidebar shows v2.4.1.
 
-## v2.5.0 — Timezone-aware time-off matching
+## v2.5.0 — Timezone-aware time-off matching (planning checklist; all delivered in the v2.5.0 section below)
 
-- [ ] Scheduler: per-slot `dayKey` for engineer E uses E's timezone, not UTC. PDT engineer "off Jul 4" = unavailable Jul 4 07:00 UTC → Jul 5 07:00 UTC.
-- [ ] Pass `engineer.timezone` into `SchedulerEngineerInput` (currently only `timeOffDates` is in scope).
-- [ ] Add `toLocalDateKey(ms, timezone)` helper in `shared/coverage.ts` (mirrors `toDateKey` but applies a TZ offset).
-- [ ] Audit gaps, gapSuggester, hiring, severity for similar UTC-day assumptions on time_off; update if needed.
-- [ ] New test file `server/scheduler.timeOffTz.test.ts`: PDT engineer Jul 4 PTO, SGT engineer Jan 1 HOLIDAY, IST engineer with multi-day PTO straddling year boundary — all blocked on the right UTC slots.
-- [ ] Full vitest suite still green (regression: existing PTO/holiday tests should still pass if they used UTC-aligned engineers, which is the case for the current test fixtures).
-- [ ] Regenerate live schedule; verify Pod 3 (SGT engineers 14/15) still produces single-shift days.
-- [ ] Bump APP_VERSION to 2.5.0 + timezone test assertion.
+- [x] Scheduler: per-slot `dayKey` for engineer E uses E's timezone, not UTC. PDT engineer "off Jul 4" = unavailable Jul 4 07:00 UTC → Jul 5 07:00 UTC.
+- [x] Pass `engineer.timezone` into `SchedulerEngineerInput` (currently only `timeOffDates` is in scope).
+- [x] Add `toLocalDateKey(ms, timezone)` helper (placed in `server/scheduler.ts` next to `toDateKey`, using `TIMEZONE_OFFSETS` from `shared/scheduling.ts`).
+- [x] Audit gaps, gapSuggester, hiring, severity for similar UTC-day assumptions on time_off; fixed `gapSuggester.isEngineerOffOnGapDay`. Hiring/severity don't compute per-day off lookups.
+- [x] New test file `server/scheduler.timeOffTz.test.ts`: PDT, SGT, IST cases (10 tests).
+- [x] Full vitest suite still green (174/174).
+- [x] Regenerated live schedule (2,404 shifts / 99.9% coverage with canonical US holidays honored).
+- [x] Bump APP_VERSION to 2.5.0 + timezone test assertion.
 
 ## v2.5.0 — Timezone-aware time-off (date-key bug fix)
 
