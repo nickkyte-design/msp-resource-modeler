@@ -33,13 +33,32 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-type Region = "US" | "IN" | "CUSTOM";
+type Region = "US" | "IN" | "SG" | "CUSTOM";
 
 const REGION_LABELS: Record<Region, string> = {
   US: "US Federal",
   IN: "India Gazetted",
+  SG: "Singapore Public",
   CUSTOM: "Custom",
 };
+
+/**
+ * Compute how many engineers a holiday in `holidayRegion` would touch given
+ * the live engineer roster. Mirrors `holidayAppliesToEngineer` in server/db.ts.
+ */
+function engineersTouchedByRegion(
+  holidayRegion: string,
+  engineers: { region: string | null; active: boolean }[],
+): number {
+  return engineers.filter(
+    (e) =>
+      e.active &&
+      (holidayRegion === "CUSTOM" ||
+        e.region === "GLOBAL" ||
+        e.region === null ||
+        e.region === holidayRegion),
+  ).length;
+}
 
 /** Format a YYYY-MM-DD date string as "Mon, Jan 19, 2026" without timezone drift. */
 function formatHolidayDate(ymd: string): string {
@@ -69,6 +88,7 @@ export default function HolidayManagementSection({
   const { data: rows = [], isLoading } = trpc.holidays.list.useQuery({
     year: scheduleYear,
   });
+  const { data: engineerList = [] } = trpc.engineers.list.useQuery();
 
   const updateSettings = trpc.settings.update.useMutation({
     onSuccess: () => utils.settings.get.invalidate(),
@@ -136,6 +156,36 @@ export default function HolidayManagementSection({
     () => [...rows].sort((a, b) => a.date.localeCompare(b.date)),
     [rows],
   );
+
+  /**
+   * Region-aware preview: how many time-off rows would `Apply to roster` create
+   * right now, given the live engineer roster + holiday registry?
+   * Aggregates by holiday region so the user sees a per-region breakdown.
+   */
+  const regionPreview = useMemo(() => {
+    const groups: Record<string, { count: number; engineers: number }> = {};
+    let totalRows = 0;
+    const engineerHits = new Set<number>();
+    for (const h of rows) {
+      const eligible = engineerList.filter(
+        (e) =>
+          e.active &&
+          (h.region === "CUSTOM" ||
+            e.region === "GLOBAL" ||
+            e.region === null ||
+            e.region === h.region),
+      );
+      const matchCount = eligible.length;
+      const prev = groups[h.region] ?? { count: 0, engineers: 0 };
+      groups[h.region] = {
+        count: prev.count + 1,
+        engineers: Math.max(prev.engineers, matchCount),
+      };
+      totalRows += matchCount;
+      for (const e of eligible) engineerHits.add(e.id);
+    }
+    return { groups, totalRows, engineersTouched: engineerHits.size };
+  }, [rows, engineerList]);
 
   const commitTarget = () => {
     const v = Math.max(0, Math.min(60, Math.round(targetInput) || 0));
@@ -244,23 +294,52 @@ export default function HolidayManagementSection({
           </div>
         </div>
 
-        <Button
-          onClick={() => apply.mutate({ year: scheduleYear })}
-          disabled={apply.isPending || sortedRows.length === 0}
-          className="md:self-end"
-        >
-          {apply.isPending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Applying…
-            </>
-          ) : (
-            <>
-              <Wand2 className="h-4 w-4" />
-              Apply to roster
-            </>
-          )}
-        </Button>
+        <div className="flex flex-col items-stretch gap-2 md:items-end">
+          <Button
+            onClick={() => apply.mutate({ year: scheduleYear })}
+            disabled={apply.isPending || sortedRows.length === 0}
+          >
+            {apply.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Applying…
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4" />
+                Apply to roster
+              </>
+            )}
+          </Button>
+          {sortedRows.length > 0 && engineerList.length > 0 ? (
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground md:items-end">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {Object.entries(regionPreview.groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([region, { count, engineers }]) => (
+                    <span
+                      key={region}
+                      className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card/40 px-1.5 py-0.5 tabular-nums"
+                      title={`${count} ${region} holiday${count === 1 ? "" : "s"} → ${engineers} eligible engineer${engineers === 1 ? "" : "s"} each`}
+                    >
+                      <span className="font-medium text-foreground">
+                        {region}
+                      </span>
+                      <span>
+                        {count}×{engineers}
+                      </span>
+                    </span>
+                  ))}
+              </div>
+              <span className="font-medium text-foreground tabular-nums">
+                Will create {regionPreview.totalRows.toLocaleString()} time-off
+                row{regionPreview.totalRows === 1 ? "" : "s"} across{" "}
+                {regionPreview.engineersTouched} engineer
+                {regionPreview.engineersTouched === 1 ? "" : "s"}
+              </span>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* Add new + presets row */}

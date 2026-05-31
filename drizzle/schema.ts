@@ -33,6 +33,12 @@ export const engineers = mysqlTable("engineers", {
   /** Whether the engineer participates in scheduling. */
   active: boolean("active").notNull().default(true),
   /**
+   * Holiday region tag. Holiday presets are applied only to engineers whose
+   * region matches (or to all engineers if their region is GLOBAL). Defaults
+   * to GLOBAL so existing rosters keep behaving as they did before v2.4.0.
+   */
+  region: mysqlEnum("region", ["US", "IN", "SG", "GLOBAL"]).notNull().default("GLOBAL"),
+  /**
    * Soft preferences (overridable). Shape:
    * { weekdayOnly: boolean, preferEightHourShifts: boolean }
    */

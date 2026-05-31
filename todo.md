@@ -243,3 +243,29 @@
 - [x] Full vitest suite green (152 tests / 17 files)
 - [x] Browser-verified: Settings page renders all 3 preset buttons including "Singapore Public Holidays"
 - [x] Bump `APP_VERSION` to 2.3.4 + timezone test assertion
+
+## v2.4.0 — Per-engineer region tagging
+
+- [ ] Schema: `engineers.region` enum (US|IN|SG|GLOBAL, default GLOBAL); generate + apply drizzle migration
+- [ ] Backfill: existing engineers default to GLOBAL (so existing behavior is preserved until user opts in)
+- [ ] db helper: `updateEngineerRegion(engineerId, region)`
+- [ ] `applyHolidaysToRoster` updated: a holiday with `region=R` materializes time-off for engineers where `engineer.region == R` OR `engineer.region == GLOBAL`; CUSTOM holidays apply to all
+- [ ] Roster UI: new Region column with shadcn Select inline editor (US/IN/SG/Global)
+- [ ] HolidayManagementSection: dialog preview "Will create N time-off rows across M engineers (by region match)"
+- [ ] tRPC: `engineers.updateRegion` protected mutation, `holidays.applyToRoster` returns per-region counts
+- [ ] Vitest: region-filter math in `applyHolidaysToRoster`, GLOBAL fallthrough, CUSTOM applies to all, engineer.region default = GLOBAL, update mutation
+- [ ] Verify on live data: set eng 14/15 region=SG, others region=US; apply SG preset, count SG holiday rows = 11 × 2 = 22 (not 11 × 15 = 165)
+- [ ] Bump APP_VERSION to 2.4.0 + timezone test assertion
+
+
+## v2.4.0 — Per-engineer region tagging
+
+- [x] Schema: `engineers.region` enum (US|IN|SG|GLOBAL, default GLOBAL); migration `0008_foamy_onslaught.sql` applied; backfill defaults all existing engineers to GLOBAL (no behavioral change for existing rosters)
+- [x] `holidayAppliesToEngineer(holidayRegion, engineerRegion)` exported from `server/db.ts` encodes the policy: CUSTOM holidays universal; GLOBAL engineers receive everything; otherwise exact region match
+- [x] `applyHolidaysToRoster` now filters by region; returns `{ holidaysApplied, engineersAffected, rowsInserted, perRegion }`; engineersAffected counts distinct engineers actually touched (not just active count)
+- [x] `engineers.update` tRPC schema accepts `region` (US|IN|SG|GLOBAL); `holidays.upsert` accepts SG too
+- [x] Roster page: new Region column with Select editor (Global/US/India/Singapore) per engineer row, alongside Timezone
+- [x] HolidayManagementSection: live region preview pills (`US 11×13`) + aggregate summary (`Will create 143 time-off rows across 13 engineers`); computed from live engineers list using same policy as server (kept in sync)
+- [x] Vitest: `server/holidayRegion.test.ts` — 5 cases covering CUSTOM universality, GLOBAL receives-all, exact region matching, SG-only roster gets zero US holidays, mixed-roster counting
+- [x] Browser-verified: tagged eng 14+15 SG → preview drops from 11×15=165 to 11×13=143 rows; Roster page shows correct Region per row; sidebar reads v2.4.0
+- [x] Bump APP_VERSION to 2.4.0 + timezone test assertion; full suite 157/157

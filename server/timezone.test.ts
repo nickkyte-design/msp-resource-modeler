@@ -32,7 +32,7 @@ describe("timezone catalog", () => {
 });
 
 describe("app version", () => {
-  it("matches the v2.3.4 release", () => {
-    expect(APP_VERSION).toBe("2.3.4");
+  it("matches the v2.4.0 release", () => {
+    expect(APP_VERSION).toBe("2.4.0");
   });
 });

@@ -420,16 +420,42 @@ export async function clearHolidaysForYear(year: number) {
 }
 
 /**
+ * Region match policy for v2.4.0 region-aware holiday application:
+ *   - holiday.region === "CUSTOM"   → applies to every active engineer
+ *   - engineer.region === "GLOBAL"  → engineer receives every holiday
+ *   - otherwise                     → engineer.region must equal holiday.region
+ */
+export function holidayAppliesToEngineer(
+  holidayRegion: string,
+  engineerRegion: string,
+): boolean {
+  if (holidayRegion === "CUSTOM") return true;
+  if (engineerRegion === "GLOBAL") return true;
+  return holidayRegion === engineerRegion;
+}
+
+/**
  * Materialize the canonical holiday list into per-engineer time_off rows of kind=HOLIDAY.
  * Idempotent: clears existing HOLIDAY rows for the year first, then re-inserts.
+ *
+ * v2.4.0: respects per-engineer `region` tagging. Holidays in region R only
+ * materialize for engineers in region R or region GLOBAL; CUSTOM holidays apply
+ * to everyone (back-compat for hand-entered dates).
  */
 export async function applyHolidaysToRoster(year: number): Promise<{
   holidaysApplied: number;
   engineersAffected: number;
   rowsInserted: number;
+  perRegion: Record<string, number>;
 }> {
   const db = await getDb();
-  if (!db) return { holidaysApplied: 0, engineersAffected: 0, rowsInserted: 0 };
+  if (!db)
+    return {
+      holidaysApplied: 0,
+      engineersAffected: 0,
+      rowsInserted: 0,
+      perRegion: {},
+    };
   const holidayRows = await listHolidays(year);
   const activeEngineers = (await listEngineers()).filter((e) => e.active);
   // Reset HOLIDAY time_off for the year so this is idempotent.
@@ -439,23 +465,31 @@ export async function applyHolidaysToRoster(year: number): Promise<{
       holidaysApplied: holidayRows.length,
       engineersAffected: activeEngineers.length,
       rowsInserted: 0,
+      perRegion: {},
     };
   }
   const toInsert: InsertTimeOff[] = [];
+  const perRegion: Record<string, number> = {};
+  const engineerHitSet = new Set<number>();
   for (const eng of activeEngineers) {
     for (const h of holidayRows) {
+      if (!holidayAppliesToEngineer(h.region, eng.region)) continue;
       toInsert.push({
         engineerId: eng.id,
         kind: "HOLIDAY",
         date: h.date,
         scheduleYear: year,
       });
+      perRegion[h.region] = (perRegion[h.region] ?? 0) + 1;
+      engineerHitSet.add(eng.id);
     }
   }
   await bulkInsertTimeOff(toInsert);
   return {
     holidaysApplied: holidayRows.length,
-    engineersAffected: activeEngineers.length,
+    engineersAffected: engineerHitSet.size,
     rowsInserted: toInsert.length,
+    perRegion,
   };
 }
+

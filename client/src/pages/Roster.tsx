@@ -125,6 +125,7 @@ export default function Roster() {
                   <TableHead className="w-[80px]">Color</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Timezone</TableHead>
+                  <TableHead>Region</TableHead>
                   <TableHead>Pod</TableHead>
                   <TableHead>Soft Prefs</TableHead>
                   <TableHead>Hard Prefs (Forbidden Days)</TableHead>
@@ -185,6 +186,27 @@ export default function Roster() {
                                 {tz}
                               </SelectItem>
                             ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={eng.region ?? "GLOBAL"}
+                          onValueChange={(v) =>
+                            updateMut.mutate({
+                              id: eng.id,
+                              region: v as "US" | "IN" | "SG" | "GLOBAL",
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-[110px] h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="GLOBAL">Global</SelectItem>
+                            <SelectItem value="US">US</SelectItem>
+                            <SelectItem value="IN">India</SelectItem>
+                            <SelectItem value="SG">Singapore</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>

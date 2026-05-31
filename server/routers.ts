@@ -132,6 +132,7 @@ export const appRouter = router({
             .string()
             .regex(/^#[0-9a-fA-F]{6}$/, "Must be a #RRGGBB hex color")
             .optional(),
+          region: z.enum(["US", "IN", "SG", "GLOBAL"]).optional(),
         }),
       )
       .mutation(async ({ input }) => {
@@ -849,7 +850,7 @@ export const appRouter = router({
           scheduleYear: z.number().int().min(2000).max(2100),
           date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           label: z.string().min(1).max(80),
-          region: z.enum(["US", "IN", "CUSTOM"]).default("CUSTOM"),
+          region: z.enum(["US", "IN", "SG", "CUSTOM"]).default("CUSTOM"),
         }),
       )
       .mutation(async ({ input }) => {
