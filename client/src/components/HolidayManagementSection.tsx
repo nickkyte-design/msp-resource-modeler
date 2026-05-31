@@ -34,12 +34,13 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-type Region = "US" | "IN" | "SG" | "CUSTOM";
+type Region = "US" | "IN" | "SG" | "UK" | "CUSTOM";
 
 const REGION_LABELS: Record<Region, string> = {
   US: "US Federal",
   IN: "India Gazetted",
   SG: "Singapore Public",
+  UK: "UK Bank",
   CUSTOM: "Custom",
 };
 
@@ -147,6 +148,7 @@ export default function HolidayManagementSection({
         `US ${res.presetsLoaded.US}`,
         `IN ${res.presetsLoaded.IN}`,
         `SG ${res.presetsLoaded.SG}`,
+        `UK ${res.presetsLoaded.UK ?? 0}`,
       ].join(" · ");
       toast.success(
         `Reloaded presets (${presetLine}) and applied ${res.rowsInserted.toLocaleString()} time-off rows to ${res.engineersAffected} engineers.`,
@@ -168,7 +170,7 @@ export default function HolidayManagementSection({
 
   // Preset confirm dialog
   const [confirmPreset, setConfirmPreset] = useState<null | {
-    region: "US" | "IN" | "SG";
+    region: "US" | "IN" | "SG" | "UK";
     replace: boolean;
   }>(null);
   // v2.4.1 reconcile confirm dialog
@@ -341,7 +343,7 @@ export default function HolidayManagementSection({
             className="bg-card/40"
             onClick={() => setConfirmReapplyAll(true)}
             disabled={reapplyAll.isPending}
-            title="Wipes all US/IN/SG preset rows, reloads them from canonical lists, then applies to roster. Custom holidays preserved."
+            title="Wipes all US/IN/SG/UK preset rows, reloads them from canonical lists, then applies to roster. Custom holidays preserved."
           >
             {reapplyAll.isPending ? (
               <>
@@ -439,6 +441,7 @@ export default function HolidayManagementSection({
                 <SelectItem value="US">US Federal</SelectItem>
                 <SelectItem value="IN">India Gazetted</SelectItem>
                 <SelectItem value="SG">Singapore Public</SelectItem>
+                <SelectItem value="UK">UK Bank</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -483,6 +486,17 @@ export default function HolidayManagementSection({
           >
             <CalendarPlus className="h-3.5 w-3.5" />
             Singapore Public Holidays
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setConfirmPreset({ region: "UK", replace: rows.length > 0 })
+            }
+            disabled={loadPreset.isPending}
+          >
+            <CalendarPlus className="h-3.5 w-3.5" />
+            UK Bank Holidays
           </Button>
           <span className="text-xs text-muted-foreground ml-2">
             Currently presets are available for 2026 only.
@@ -531,7 +545,11 @@ export default function HolidayManagementSection({
                         ? "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400"
                         : row.region === "IN"
                           ? "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-400"
-                          : "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-400"
+                          : row.region === "UK"
+                            ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                            : row.region === "SG"
+                              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                              : "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-400"
                     }`}
                   >
                     {REGION_LABELS[row.region as Region] ?? row.region}
@@ -568,7 +586,9 @@ export default function HolidayManagementSection({
                 ? "US Federal"
                 : confirmPreset?.region === "IN"
                   ? "India Gazetted"
-                  : "Singapore Public"}{" "}
+                  : confirmPreset?.region === "UK"
+                    ? "UK Bank"
+                    : "Singapore Public"}{" "}
               holidays?
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
@@ -580,7 +600,9 @@ export default function HolidayManagementSection({
                       ? "United States"
                       : confirmPreset?.region === "IN"
                         ? "India"
-                        : "Singapore"}
+                        : confirmPreset?.region === "UK"
+                          ? "United Kingdom (England & Wales)"
+                          : "Singapore"}
                   </span>{" "}
                   into the registry.
                 </p>
@@ -638,12 +660,13 @@ export default function HolidayManagementSection({
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <p>
-                  This wipes every <strong>US</strong>, <strong>India</strong>,
-                  and <strong>Singapore</strong> preset holiday row for{" "}
-                  {scheduleYear}, reloads each region's canonical list, then
-                  re-applies them to the roster. Holiday time-off rows are
-                  rebuilt so each engineer only receives the holidays for
-                  their tagged region (Global engineers receive all three).
+                  This wipes every <strong>US</strong>, <strong>India</strong>,{" "}
+                  <strong>Singapore</strong>, and <strong>UK</strong> preset
+                  holiday row for {scheduleYear}, reloads each region's
+                  canonical list, then re-applies them to the roster. Holiday
+                  time-off rows are rebuilt so each engineer only receives the
+                  holidays for their tagged region (Global engineers receive
+                  all four).
                 </p>
                 <p className="text-muted-foreground">
                   Custom holidays (any row tagged{" "}

@@ -64,6 +64,13 @@
       "when": 1780190025600,
       "tag": "0008_foamy_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1780200497787,
+      "tag": "0009_tricky_psynapse",
+      "breakpoints": true
     }
   ]
 }

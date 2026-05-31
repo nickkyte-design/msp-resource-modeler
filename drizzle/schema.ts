@@ -37,7 +37,7 @@ export const engineers = mysqlTable("engineers", {
    * region matches (or to all engineers if their region is GLOBAL). Defaults
    * to GLOBAL so existing rosters keep behaving as they did before v2.4.0.
    */
-  region: mysqlEnum("region", ["US", "IN", "SG", "GLOBAL"]).notNull().default("GLOBAL"),
+  region: mysqlEnum("region", ["US", "IN", "SG", "UK", "GLOBAL"]).notNull().default("GLOBAL"),
   /**
    * Soft preferences (overridable). Shape:
    * { weekdayOnly: boolean, preferEightHourShifts: boolean }

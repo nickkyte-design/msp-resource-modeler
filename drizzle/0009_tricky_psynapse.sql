@@ -1,0 +1,1 @@
+ALTER TABLE `engineers` MODIFY COLUMN `region` enum('US','IN','SG','UK','GLOBAL') NOT NULL DEFAULT 'GLOBAL';

@@ -4,6 +4,7 @@ import {
   US_FEDERAL_HOLIDAYS_2026,
   INDIA_GAZETTED_HOLIDAYS_2026,
   SINGAPORE_PUBLIC_HOLIDAYS_2026,
+  UK_BANK_HOLIDAYS_2026,
 } from "../shared/holidayPresets";
 
 describe("holidayPresets (pure data)", () => {
@@ -48,13 +49,43 @@ describe("holidayPresets (pure data)", () => {
     expect(dateList).not.toContain("2026-11-08");
   });
 
+  // v2.6.0: UK Bank Holidays preset for England & Wales.
+  it("UK 2026 preset has 8 unique dates, all in 2026, with Boxing Day substitute on Mon 28 Dec", () => {
+    expect(UK_BANK_HOLIDAYS_2026.length).toBe(8);
+    const dates = new Set(UK_BANK_HOLIDAYS_2026.map((h) => h.date));
+    expect(dates.size).toBe(UK_BANK_HOLIDAYS_2026.length);
+    for (const h of UK_BANK_HOLIDAYS_2026) {
+      expect(h.date).toMatch(/^2026-\d{2}-\d{2}$/);
+      expect(h.label.length).toBeGreaterThan(0);
+    }
+    // The 8 canonical 2026 England-and-Wales bank holidays:
+    // 1 Jan, 3 Apr (Good Fri), 6 Apr (Easter Mon), 4 May, 25 May,
+    // 31 Aug, 25 Dec, and 28 Dec (Boxing Day substitute, since 26 Dec is Sat).
+    const dateList = UK_BANK_HOLIDAYS_2026.map((h) => h.date);
+    expect(dateList).toEqual([
+      "2026-01-01",
+      "2026-04-03",
+      "2026-04-06",
+      "2026-05-04",
+      "2026-05-25",
+      "2026-08-31",
+      "2026-12-25",
+      "2026-12-28",
+    ]);
+    // Boxing Day proper falls on Saturday Dec 26 — the substitute (Mon Dec 28)
+    // is the day off-rosters skip; the gazetted Saturday must NOT appear.
+    expect(dateList).not.toContain("2026-12-26");
+  });
+
   it("getHolidayPreset returns the expected sets and falls through for other years", () => {
     expect(getHolidayPreset("US", 2026)).toBe(US_FEDERAL_HOLIDAYS_2026);
     expect(getHolidayPreset("IN", 2026)).toBe(INDIA_GAZETTED_HOLIDAYS_2026);
     expect(getHolidayPreset("SG", 2026)).toBe(SINGAPORE_PUBLIC_HOLIDAYS_2026);
+    expect(getHolidayPreset("UK", 2026)).toBe(UK_BANK_HOLIDAYS_2026);
     expect(getHolidayPreset("US", 2027)).toEqual([]);
     expect(getHolidayPreset("IN", 2099)).toEqual([]);
     expect(getHolidayPreset("SG", 2025)).toEqual([]);
+    expect(getHolidayPreset("UK", 2027)).toEqual([]);
     expect(getHolidayPreset("CUSTOM", 2026)).toEqual([]);
   });
 
@@ -63,6 +94,7 @@ describe("holidayPresets (pure data)", () => {
       US_FEDERAL_HOLIDAYS_2026,
       INDIA_GAZETTED_HOLIDAYS_2026,
       SINGAPORE_PUBLIC_HOLIDAYS_2026,
+      UK_BANK_HOLIDAYS_2026,
     ]) {
       for (let i = 1; i < preset.length; i += 1) {
         expect(preset[i].date >= preset[i - 1].date).toBe(true);
@@ -298,15 +330,17 @@ describe("holidays router (with mocked db)", () => {
   });
 
   // ---- v2.4.1 reapplyAllPresets ----
-  it("reapplyAllPresets loads US+IN+SG = 32 region rows (with overlapping dates dedup'd per-engineer)", async () => {
+  it("reapplyAllPresets loads US+IN+SG+UK = 40 region rows (with overlapping dates dedup'd per-engineer)", async () => {
     const caller = appRouter.createCaller(ctx());
     const r = await caller.holidays.reapplyAllPresets({ year: 2026 });
-    expect(r.presetsLoaded).toEqual({ US: 11, IN: 10, SG: 11 });
-    // 32 distinct (date, region) tuples are stored, even though only 27 unique
-    // calendar dates exist (Jan 1, May 1, Dec 25 appear across 2–3 regions).
-    expect(r.totalHolidaysAfter).toBe(32);
-    // 2 active engineers × 27 unique dates = 54 time-off rows after per-engineer dedupe
-    expect(r.rowsInserted).toBe(54);
+    // v2.6.0: UK preset (8 holidays) joined the reconcile set.
+    expect(r.presetsLoaded).toEqual({ US: 11, IN: 10, SG: 11, UK: 8 });
+    // 40 distinct (date, region) tuples are stored, even though only 31 unique
+    // calendar dates exist (Jan 1, Apr 3, May 1, May 25, Dec 25 appear across
+    // 2–4 regions).
+    expect(r.totalHolidaysAfter).toBe(40);
+    // 2 active engineers × 31 unique dates = 62 time-off rows after per-engineer dedupe.
+    expect(r.rowsInserted).toBe(62);
     expect(r.engineersAffected).toBe(2);
   });
 
@@ -314,8 +348,8 @@ describe("holidays router (with mocked db)", () => {
     const caller = appRouter.createCaller(ctx());
     await caller.holidays.reapplyAllPresets({ year: 2026 });
     const second = await caller.holidays.reapplyAllPresets({ year: 2026 });
-    expect(second.totalHolidaysAfter).toBe(32);
-    expect((await caller.holidays.list({ year: 2026 })).length).toBe(32);
+    expect(second.totalHolidaysAfter).toBe(40);
+    expect((await caller.holidays.list({ year: 2026 })).length).toBe(40);
   });
 
   it("reapplyAllPresets preserves CUSTOM holidays but replaces region rows", async () => {
@@ -335,8 +369,8 @@ describe("holidays router (with mocked db)", () => {
     });
 
     const r = await caller.holidays.reapplyAllPresets({ year: 2026 });
-    // 32 region presets + 1 custom = 33 holidays
-    expect(r.totalHolidaysAfter).toBe(33);
+    // 40 region presets (US 11 + IN 10 + SG 11 + UK 8) + 1 custom = 41 holidays
+    expect(r.totalHolidaysAfter).toBe(41);
 
     const list = await caller.holidays.list({ year: 2026 });
     const custom = list.find((h) => h.region === "CUSTOM");

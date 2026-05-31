@@ -195,7 +195,12 @@ export default function Roster() {
                           onValueChange={(v) =>
                             updateMut.mutate({
                               id: eng.id,
-                              region: v as "US" | "IN" | "SG" | "GLOBAL",
+                              region: v as
+                                | "US"
+                                | "IN"
+                                | "SG"
+                                | "UK"
+                                | "GLOBAL",
                             })
                           }
                         >
@@ -207,6 +212,7 @@ export default function Roster() {
                             <SelectItem value="US">US</SelectItem>
                             <SelectItem value="IN">India</SelectItem>
                             <SelectItem value="SG">Singapore</SelectItem>
+                            <SelectItem value="UK">UK</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>

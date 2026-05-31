@@ -133,7 +133,7 @@ export const appRouter = router({
             .string()
             .regex(/^#[0-9a-fA-F]{6}$/, "Must be a #RRGGBB hex color")
             .optional(),
-          region: z.enum(["US", "IN", "SG", "GLOBAL"]).optional(),
+          region: z.enum(["US", "IN", "SG", "UK", "GLOBAL"]).optional(),
         }),
       )
       .mutation(async ({ input }) => {
@@ -862,7 +862,7 @@ export const appRouter = router({
           scheduleYear: z.number().int().min(2000).max(2100),
           date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           label: z.string().min(1).max(80),
-          region: z.enum(["US", "IN", "SG", "CUSTOM"]).default("CUSTOM"),
+          region: z.enum(["US", "IN", "SG", "UK", "CUSTOM"]).default("CUSTOM"),
         }),
       )
       .mutation(async ({ input }) => {
@@ -883,7 +883,7 @@ export const appRouter = router({
     loadPreset: publicProcedure
       .input(
         z.object({
-          region: z.enum(["US", "IN", "SG"]),
+          region: z.enum(["US", "IN", "SG", "UK"]),
           year: z.number().int(),
           replace: z.boolean().default(false),
         }),
@@ -915,20 +915,31 @@ export const appRouter = router({
         return applyHolidaysToRoster(input.year);
       }),
     // v2.4.1 — one-click reconcile. Removes only region-preset rows
-    // (US/IN/SG) for the year, reloads them, then re-applies to the
+    // (US/IN/SG/UK) for the year, reloads them, then re-applies to the
     // roster. CUSTOM rows are preserved so user-entered dates survive.
     reapplyAllPresets: publicProcedure
       .input(z.object({ year: z.number().int().min(2020).max(2100) }))
       .mutation(async ({ input }) => {
         const existing = await listHolidays(input.year);
         const presetIds = existing
-          .filter((h) => h.region === "US" || h.region === "IN" || h.region === "SG")
+          .filter(
+            (h) =>
+              h.region === "US" ||
+              h.region === "IN" ||
+              h.region === "SG" ||
+              h.region === "UK",
+          )
           .map((h) => h.id);
         for (const id of presetIds) {
           await deleteHoliday(id);
         }
-        const perRegionLoaded: Record<string, number> = { US: 0, IN: 0, SG: 0 };
-        for (const region of ["US", "IN", "SG"] as const) {
+        const perRegionLoaded: Record<string, number> = {
+          US: 0,
+          IN: 0,
+          SG: 0,
+          UK: 0,
+        };
+        for (const region of ["US", "IN", "SG", "UK"] as const) {
           const preset = getHolidayPreset(region, input.year);
           for (const entry of preset) {
             await upsertHoliday({

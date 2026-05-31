@@ -21,13 +21,13 @@ import { holidayAppliesToEngineer } from "./db";
  */
 describe("holidayAppliesToEngineer — v2.4.0 region match policy", () => {
   it("CUSTOM holidays apply to engineers in every region (back-compat)", () => {
-    for (const er of ["US", "IN", "SG", "GLOBAL"]) {
+    for (const er of ["US", "IN", "SG", "UK", "GLOBAL"]) {
       expect(holidayAppliesToEngineer("CUSTOM", er)).toBe(true);
     }
   });
 
   it("GLOBAL engineers receive every holiday regardless of holiday region", () => {
-    for (const hr of ["US", "IN", "SG", "CUSTOM"]) {
+    for (const hr of ["US", "IN", "SG", "UK", "CUSTOM"]) {
       expect(holidayAppliesToEngineer(hr, "GLOBAL")).toBe(true);
     }
   });
@@ -44,6 +44,15 @@ describe("holidayAppliesToEngineer — v2.4.0 region match policy", () => {
     expect(holidayAppliesToEngineer("SG", "US")).toBe(false);
     expect(holidayAppliesToEngineer("SG", "IN")).toBe(false);
     expect(holidayAppliesToEngineer("SG", "SG")).toBe(true);
+
+    // v2.6.0: UK preset matches UK engineers only.
+    expect(holidayAppliesToEngineer("UK", "UK")).toBe(true);
+    expect(holidayAppliesToEngineer("UK", "US")).toBe(false);
+    expect(holidayAppliesToEngineer("UK", "IN")).toBe(false);
+    expect(holidayAppliesToEngineer("UK", "SG")).toBe(false);
+    expect(holidayAppliesToEngineer("US", "UK")).toBe(false);
+    expect(holidayAppliesToEngineer("IN", "UK")).toBe(false);
+    expect(holidayAppliesToEngineer("SG", "UK")).toBe(false);
   });
 
   it("Symmetric counter-cases: an SG-only roster receives zero US holidays", () => {

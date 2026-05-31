@@ -7,7 +7,7 @@
  * Dates are calendar-day strings (YYYY-MM-DD); no timezone implied.
  */
 
-export type HolidayRegion = "US" | "IN" | "SG" | "CUSTOM";
+export type HolidayRegion = "US" | "IN" | "SG" | "UK" | "CUSTOM";
 
 export type HolidayPresetEntry = {
   /** Calendar date YYYY-MM-DD. */
@@ -67,6 +67,31 @@ export const SINGAPORE_PUBLIC_HOLIDAYS_2026: HolidayPresetEntry[] = [
   { date: "2026-12-25", label: "Christmas Day" },
 ];
 
+/**
+ * UK bank holidays for England & Wales 2026 (gov.uk/bank-holidays).
+ *
+ * 8 official bank holidays for England & Wales. Boxing Day (26 Dec 2026) falls
+ * on a Saturday so the substitute weekday — Monday 28 Dec — is gazetted under
+ * the Banking and Financial Dealings Act and is the day employees are actually
+ * off / on-call rosters skip. New Year's Day 2026 (Thu) needs no substitution.
+ * Good Friday and Christmas Day are common-law holidays; we keep them in the
+ * list since they trigger the same calendar-day off in practice.
+ *
+ * Scotland and Northern Ireland have slightly different bank-holiday lists
+ * (e.g. 2 Jan, St Patrick's Day, 12 Jul). For now this preset targets the
+ * majority case; extend with separate constants if needed later.
+ */
+export const UK_BANK_HOLIDAYS_2026: HolidayPresetEntry[] = [
+  { date: "2026-01-01", label: "New Year's Day" },
+  { date: "2026-04-03", label: "Good Friday" },
+  { date: "2026-04-06", label: "Easter Monday" },
+  { date: "2026-05-04", label: "Early May bank holiday" },
+  { date: "2026-05-25", label: "Spring bank holiday" },
+  { date: "2026-08-31", label: "Summer bank holiday" },
+  { date: "2026-12-25", label: "Christmas Day" },
+  { date: "2026-12-28", label: "Boxing Day (substitute)" },
+];
+
 export function getHolidayPreset(
   region: HolidayRegion,
   year: number,
@@ -78,5 +103,6 @@ export function getHolidayPreset(
   if (region === "US") return US_FEDERAL_HOLIDAYS_2026;
   if (region === "IN") return INDIA_GAZETTED_HOLIDAYS_2026;
   if (region === "SG") return SINGAPORE_PUBLIC_HOLIDAYS_2026;
+  if (region === "UK") return UK_BANK_HOLIDAYS_2026;
   return [];
 }

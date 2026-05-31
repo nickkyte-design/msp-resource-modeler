@@ -310,3 +310,19 @@
 - [x] Full suite green: 174 tests across 20 files (8 new from this version)
 - [x] Live-DB verified: regenerated schedule has zero shifts for PDT engineers (4, 5, 8) whose PDT-local date matches their canonical Jul 3 holiday row. 2,404 shifts / 99.9% coverage with 11×13 canonical holiday rows honored (vs. 2,451 / 100% when holidays cleared)
 - [x] Bump `APP_VERSION` to 2.5.0 + timezone test assertion
+
+## v2.6.0 — UK Bank Holidays preset for BST engineers
+
+- [x] Schema: added `"UK"` to `engineers.region` enum (migration `0009_tricky_psynapse.sql`); `holidays.region` was already `varchar(16)` so no migration needed there
+- [x] Shared: extended `HolidayRegion` type to include `"UK"`; added `UK_BANK_HOLIDAYS_2026` (8 canonical England & Wales bank holidays for 2026, including Boxing Day substitute Mon Dec 28 since Dec 26 falls on Saturday); wired `getHolidayPreset("UK", 2026)`
+- [x] Server: updated zod enums across `routers.ts` (engineers.update, holidays.upsert, holidays.loadPreset, applyAllPresets) to allow `"UK"`
+- [x] Server: included `"UK"` in `applyAllPresets` and `Re-apply all region presets` cleanup loop
+- [N/A] Auto-default region from BST: audited — there is no auto-region-from-timezone logic anywhere in seed/create paths. New engineers default to `region = "GLOBAL"` from the schema default and the user changes them via the Roster region selector. Adding auto-tagging would be a behavior change beyond this request, so left untouched.
+- [x] Settings UI (`HolidayManagementSection.tsx`): added "UK Bank Holidays" preset button + UK confirm-dialog branch + UK region color/label everywhere, including custom-row region selector and tooltip on Re-apply
+- [x] Settings UI: region tally chip now shows `UK 8×N` correctly (verified live: `UK 8×13 — Will create 104 time-off rows across 13 engineers`)
+- [x] Roster UI: included `"UK"` in the region selector
+- [x] Tests: extended `server/holidays.test.ts` with UK preset shape, count, uniqueness, sort; extended `server/holidayRegion.test.ts` truth tables with UK; updated reapplyAllPresets total counts (40 region rows / 31 unique dates / 41 with custom)
+- [x] Bump `APP_VERSION` to 2.6.0 + timezone test assertion
+- [x] Live verified: tagged engineers 6 & 7 (BST) as UK in DB; loaded UK preset via UI (toast: "Loaded 8 holidays"); applied to roster (toast: "Applied 8 holidays to 13 engineers = 104 time-off rows"); SQL confirmed engineers 6 & 7 each received exactly the 8 canonical UK 2026 dates as `HOLIDAY` time-off rows
+- [x] Full vitest suite green: 175 tests across 20 files
+- [x] Save checkpoint
