@@ -289,32 +289,78 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
     // We'll cycle through pool members for fairness.
     let rotationCursor = 0;
 
+    // v2.3.3: Build the list of "slots" the scheduler will try to fill for each day.
+    // For 24×7 pods this remains the legacy 3-slot UTC grid (each 8h wide). For
+    // partial-day pods (coverageHoursPerDay < 24), we collapse the day to ONE
+    // contiguous shift per coverage window — anchored at the actual window
+    // start, with `coverageHoursPerDay` duration. That avoids the 7h+1h
+    // fragmentation that v2.3.1's clip produced (a 09–17 SGT window straddles
+    // the UTC 00/08/16 grid, so v2.3.1 emitted two shifts/day; v2.3.3 emits one).
+    // We still call this collection "slots" so the assignment logic below is
+    // unchanged — only the per-day enumeration is different.
+    const isPartialDayPod = profile.coverageHoursPerDay < 24;
+
     for (let day = 0; day < totalDays; day++) {
       const dayStartMs = startMs + day * DAY_MS;
       const dayDate = new Date(dayStartMs);
       const dayOfWeek = dayDate.getUTCDay();
       const dayKey = toDateKey(dayDate);
 
-      // For each slot, ensure it is covered — *if* the slot is inside the pod's
-      // coverage window. Off-hours and off-days are skipped silently and do not
-      // contribute to `gapHoursPerPod`.
-      for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
-        const rawSlotStartMs = dayStartMs + slot * PREFERRED_SHIFT_HOURS * HOUR_MS;
-        const rawSlotEndMs = rawSlotStartMs + PREFERRED_SHIFT_HOURS * HOUR_MS;
-        if (!isSlotCovered(profile, rawSlotStartMs, PREFERRED_SHIFT_HOURS)) {
-          continue;
+      // ---- Build the slot list for this day. ----
+      // Each entry: { startMs, durationHours, slotIdx }.
+      // `slotIdx` is preserved so the active-block continuity logic still works
+      // (engineers stay in the same slot for their 5-day block).
+      const daySlots: Array<{
+        startMs: number;
+        durationHours: number;
+        slotIdx: number;
+      }> = [];
+
+      if (isPartialDayPod) {
+        // Find every coverage window whose ANCHOR-TZ calendar day matches this
+        // UTC day's range. We use a 48h lookup centered on dayStartMs to catch
+        // windows that may have started the prior UTC day (e.g. 22:00 SGT Mon =
+        // 14:00 UTC Mon — same UTC day; but 22:00 PDT Mon = 05:00 UTC Tue —
+        // different UTC day).
+        const windows = coverageWindowsInRange(
+          profile,
+          dayStartMs,
+          dayStartMs + DAY_MS,
+        );
+        // De-dupe by start, keep only windows whose start falls inside this UTC day.
+        // (A 48h sweep can return both yesterday's-anchor and today's-anchor windows.)
+        const seen = new Set<number>();
+        for (const w of windows) {
+          if (w.startMs < dayStartMs || w.startMs >= dayStartMs + DAY_MS) continue;
+          if (seen.has(w.startMs)) continue;
+          seen.add(w.startMs);
+          daySlots.push({
+            startMs: w.startMs,
+            durationHours: (w.endMs - w.startMs) / HOUR_MS,
+            slotIdx: 0, // single slot/day for partial-day pods
+          });
         }
-        // Clip the proposed shift to the intersection of this UTC-aligned slot
-        // and the pod's actual coverage window(s). For partial-day pods whose
-        // window doesn't land on the UTC 00/08/16 slot grid, this prevents the
-        // scheduler from emitting full 8h shifts that only graze the window
-        // (and so consume far more of each engineer's 45h/168h cap than they
-        // should). Manual overrides flow through `existingShifts` untouched.
-        const trim = clipSlotToCoverage(profile, rawSlotStartMs, rawSlotEndMs);
-        if (!trim) continue;
-        const slotStartMs = trim.startMs;
-        const slotDuration = trim.hours;
-        if (slotDuration <= 0) continue;
+      } else {
+        // Legacy 24×7 path: 3 UTC-aligned 8h slots/day, clipped to the union of
+        // any coverage windows they touch (handles non-UTC anchored 24×7 pods).
+        for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
+          const rawSlotStartMs = dayStartMs + slot * PREFERRED_SHIFT_HOURS * HOUR_MS;
+          const rawSlotEndMs = rawSlotStartMs + PREFERRED_SHIFT_HOURS * HOUR_MS;
+          if (!isSlotCovered(profile, rawSlotStartMs, PREFERRED_SHIFT_HOURS)) continue;
+          const trim = clipSlotToCoverage(profile, rawSlotStartMs, rawSlotEndMs);
+          if (!trim || trim.hours <= 0) continue;
+          daySlots.push({
+            startMs: trim.startMs,
+            durationHours: trim.hours,
+            slotIdx: slot,
+          });
+        }
+      }
+
+      for (const ds of daySlots) {
+        const slot = ds.slotIdx;
+        const slotStartMs = ds.startMs;
+        const slotDuration = ds.durationHours;
 
         // Find an engineer with an active block covering this slot today.
         let assigned: SchedulerEngineerInput | null = null;

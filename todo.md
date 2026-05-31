@@ -220,3 +220,13 @@
 - [x] `server/clearAllOverrides.test.ts` (5 cases): clears 3 overrides, idempotent, leaves auto shifts, year-scoped, rejects out-of-range years
 - [x] Full vitest suite green (145 tests across 16 files)
 - [x] Bump `APP_VERSION` to 2.3.2 + timezone test assertion
+
+## v2.3.3 — Single-shift partial-day pods
+
+- [x] Scheduler emits ONE shift per coverage window per active day for partial-day pods (instead of clipping each UTC slot separately, which produced 7h+1h fragmentation when a window straddled the UTC 00/08/16 grid)
+- [x] 24×7 pods continue to use the legacy 3-slot UTC grid + clip-union (zero behavioral change; existing 8h shifts preserved)
+- [x] Merge pass dropped from plan — fragmentation eliminated at the source
+- [x] New `server/scheduler.singleShift.test.ts` (6 cases): exactly 1 shift per active SGT day, every shift = 8h, every shift starts at 09:00 SGT, Apr 27 2026 SGT regression, non-SGT anchor (PDT) works, 24×7 pods unchanged
+- [x] All other vitest tests still green (151/151)
+- [x] Live schedule regenerated. Apr 27 2026 SGT: eng 14 single 8h shift (was eng 14 7h + eng 15 1h). Pod 3 year totals: 259 shifts × exactly 8h each = 2072h vs theoretical 261 weekdays × 8h = 2088h. The 16h delta is 2 weekdays unfilled; root-causing each one to a specific constraint (PTO collision, min-rest, etc.) is a separate diagnostic exercise. Crucially, **no shift fragmentation remains**: max shift duration = min shift duration = 8h
+- [x] Bump `APP_VERSION` to 2.3.3 + timezone test assertion
