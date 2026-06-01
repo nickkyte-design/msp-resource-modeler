@@ -72,7 +72,7 @@ const hardPrefSchema = z.object({
 const timezoneSchema = z.enum(["EDT", "PDT", "SGT", "BST", "IST"]);
 
 const podCoverageInputSchema = z.object({
-  podNumber: z.number().int().min(1).max(3),
+  podNumber: z.number().int().min(1).max(10),
   /** 7-bit mask: 1=Sun, 2=Mon, 4=Tue, 8=Wed, 16=Thu, 32=Fri, 64=Sat. */
   daysOfWeek: z.number().int().min(0).max(127),
   coverageStartHour: z.number().int().min(0).max(23),
@@ -193,7 +193,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const all = await listEngineers();
         const settings = await getSettings();
-        const podCount = ((settings?.podCount ?? 1) as 1 | 2 | 3);
+        const podCount = settings?.podCount ?? 1;
         // The shared helper expects numeric keys but Zod records use string keys; convert.
         const gapMap: Record<number, number> | undefined = input.gapHoursPerPod
           ? Object.fromEntries(
@@ -255,7 +255,7 @@ export const appRouter = router({
     update: publicProcedure
       .input(
         z.object({
-          podCount: z.number().int().min(1).max(3).optional(),
+          podCount: z.number().int().min(1).max(10).optional(),
           ptoEnabled: z.boolean().optional(),
           holidaysEnabled: z.boolean().optional(),
           displayTimezone: timezoneSchema.optional(),
@@ -321,7 +321,7 @@ export const appRouter = router({
         const settings = await getSettings();
         if (!settings) throw new Error("Settings not initialized");
         const year = input?.year ?? settings.scheduleYear;
-        const podCount = settings.podCount as 1 | 2 | 3;
+        const podCount = settings.podCount;
 
         // Step 1: assign PTO/holidays first (if enabled and not already assigned).
         const allEngineers = await listEngineers();
@@ -450,7 +450,7 @@ export const appRouter = router({
       .input(
         z.object({
           engineerId: z.number().int(),
-          podNumber: z.number().int().min(1).max(3),
+          podNumber: z.number().int().min(1).max(10),
           startMs: z.number(),
           durationHours: z.number().int().min(1).max(12),
           scheduleYear: z.number().int(),
@@ -553,7 +553,7 @@ export const appRouter = router({
     suggestFix: publicProcedure
       .input(
         z.object({
-          podNumber: z.number().int().min(1).max(3),
+          podNumber: z.number().int().min(1).max(10),
           startMs: z.number().int(),
           durationHours: z.number().int().min(1).max(168),
           year: z.number().int(),
@@ -711,19 +711,20 @@ export const appRouter = router({
           additions: z
             .array(
               z.object({
-                podNumber: z.number().int().min(1).max(3),
+                podNumber: z.number().int().min(1).max(10),
                 count: z.number().int().min(0).max(10),
                 timezone: timezoneSchema,
               }),
             )
-            .max(9),
+            // v2.8.0: cap is podCount(10) * timezones(5) = 50; keep a sane upper bound.
+            .max(50),
         }),
       )
       .mutation(async ({ input }) => {
         const settings = await getSettings();
         if (!settings) throw new Error("Settings not initialized");
         const year = input.year ?? settings.scheduleYear;
-        const podCount = settings.podCount as 1 | 2 | 3;
+        const podCount = settings.podCount;
 
         const [allEngineers, coverageRows, manualOverrides, timeOffRows] = await Promise.all([
           listEngineers(),

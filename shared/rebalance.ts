@@ -3,7 +3,7 @@
  *
  * Inputs:
  * - engineers: list of { id, active } sorted by id ascending (caller's responsibility).
- * - podCount: 1, 2, or 3.
+ * - podCount: 1..10 (v2.8.0 raised the cap from 3 to 10).
  * - gapHoursPerPod (optional): if provided, pods with more gap-hours receive the
  *   "leftover" engineer first when the count doesn't divide evenly. e.g. with
  *   16 engineers / 3 pods the split is 6/5/5; the pod with the highest current
@@ -20,7 +20,7 @@ export interface RebalanceInput {
 
 export function rebalancePods(
   engineers: RebalanceInput[],
-  podCount: 1 | 2 | 3,
+  podCount: number,
   gapHoursPerPod?: Record<number, number>,
 ): Map<number, number> {
   const active = engineers.filter((e) => e.active).sort((a, b) => a.id - b.id);

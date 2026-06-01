@@ -337,3 +337,32 @@
 - [x] Bump `APP_VERSION` to 2.7.0 + timezone test assertion
 - [x] Full vitest suite green: 178 tests across 20 files (175 → 178 = +3)
 - [x] Save checkpoint
+
+## v2.8.0 — Clear-and-regenerate combo + Applied badge on registry rows (PAUSED, deferred to v2.9.0)
+
+- [ ] Audit `timeOff` + `holidays` schema for a usable `createdAt` (or add one) to drive lastAppliedAt
+- [ ] `server/db.ts`: add `getHolidayAppliedSummary(year)` returning `Record<date, { engineerCount, lastAppliedAt }>` keyed by date
+- [ ] `server/routers.ts`: add `holidays.appliedSummary({year})` query
+- [ ] `server/routers.ts`: add `holidays.clearAndRegenerate({year})` combo mutation that calls clearTimeOffForYear(year, "HOLIDAY") then re-runs schedule.generate; returns `{ removed, regenerated: stats }`
+- [ ] UI: replace standalone "Clear applied holiday rows" with "Clear & re-generate" primary destructive button (keep the count badge); also keep a dedicated clear-only outline action for advanced users
+- [ ] UI: in the holiday-registry table, add an "Applied" column showing a green pill ("Applied N · 2h ago") or a grey pill ("Not applied") per row, sourced from appliedSummary
+- [ ] Vitest: appliedSummary returns expected map shape on a fresh apply; combo mutation removes + regenerates atomically
+- [ ] Bump APP_VERSION (deferred)
+- [ ] Save checkpoint (deferred)
+
+## v2.8.0 — Raise pod count cap from 3 to 10
+
+- [x] Audited all sites: 5 zod `.max(3)` in routers.ts, `1|2|3` types in `shared/scheduling.ts`, `shared/rebalance.ts`, and `server/scheduler.ts`, hardcoded `[1,2,3].map` in Settings.tsx, `as 1 | 2 | 3` casts, hire-additions `.max(9)` cap
+- [x] No schema migration needed — `engineers.podNumber` and `podCoverage.podNumber` were already plain `int`. Updated stale `// 1, 2, or 3` doc-comment.
+- [x] `shared/scheduling.ts`: widened all `1|2|3` to `number`; added `MIN_POD_COUNT=1`/`MAX_POD_COUNT=10`; dynamically populated `SUGGESTED_HEADCOUNT_PER_POD` with all 10 entries
+- [x] `server/routers.ts`: 5× `.max(3)` → `.max(10)`, hire-additions `.max(9)` → `.max(50)` (10 pods × 5 timezones), removed leftover `as 1|2|3` casts
+- [x] `Settings.tsx`: replaced 3-card grid with dynamic 1..10 5×2 compact selector
+- [x] Pod-tab rows on Calendar/Balance/GapReport/HeatMap: `inline-flex` → `flex flex-wrap` + `whitespace-nowrap` so 4..10 tabs wrap on narrow screens
+- [x] Default pod coverage for pods 4..10: not needed — `defaultCoverageProfile(podNumber)` already provides 24×7 EDT default for any pod
+- [x] Gap suggester: pod-agnostic via `e.podNumber === gap.podNumber`, unchanged
+- [x] Region routing: per-engineer, unchanged
+- [x] Tests: added `server/scheduler.largePodCount.test.ts` (6 tests covering MAX/MIN constants, full 1..10 headcount entries, linear scaling at podCount=7 and 10, and `generateSchedule` accepting podCount=7 and 10)
+- [x] Bumped `APP_VERSION` to 2.8.0 + timezone test assertion
+- [x] Live verified: dev server shows v2.8.0; Calendar renders correctly at current podCount=3
+- [x] Full vitest suite green: 184 tests across 21 files (178 → 184 = +6)
+- [x] Save checkpoint

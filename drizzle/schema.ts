@@ -28,7 +28,7 @@ export const engineers = mysqlTable("engineers", {
   name: varchar("name", { length: 64 }).notNull(),
   /** Timezone code: EDT | PDT | SGT | BST | IST */
   timezone: varchar("timezone", { length: 8 }).notNull().default("EDT"),
-  /** Currently assigned pod number (1, 2, or 3). NULL = unassigned. */
+  /** Currently assigned pod number (v2.8.0: 1..10). NULL = unassigned. */
   podNumber: int("podNumber"),
   /** Whether the engineer participates in scheduling. */
   active: boolean("active").notNull().default(true),

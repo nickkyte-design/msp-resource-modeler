@@ -160,11 +160,12 @@ export default function CalendarPage() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="inline-flex items-center rounded-md border bg-card p-0.5">
+            {/* v2.8.0: flex-wrap so 4..10 pod tabs wrap on narrow screens. */}
+            <div className="flex flex-wrap items-center rounded-md border bg-card p-0.5">
               <button
                 type="button"
                 onClick={() => setSelectedPod("all")}
-                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === "all" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm whitespace-nowrap transition-colors ${selectedPod === "all" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
               >
                 All
               </button>
@@ -173,7 +174,7 @@ export default function CalendarPage() {
                   key={p}
                   type="button"
                   onClick={() => setSelectedPod(p)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${selectedPod === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-sm whitespace-nowrap transition-colors ${selectedPod === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   Pod {p}
                 </button>

@@ -4,7 +4,7 @@
  */
 
 /** App version surfaced in the UI; bumped each release. */
-export const APP_VERSION = "2.7.0";
+export const APP_VERSION = "2.8.0";
 
 export const TIMEZONES = ["EDT", "PDT", "SGT", "BST", "IST"] as const;
 export type Timezone = (typeof TIMEZONES)[number];
@@ -96,8 +96,13 @@ export interface HeadcountSuggestion {
   reasoning: string[];
 }
 
+/** v2.8.0: pod count now supports 1..10 (up from 1..3). The math below is
+ *  identical — we just relaxed the type so callers don't need to cast. */
+export const MAX_POD_COUNT = 10;
+export const MIN_POD_COUNT = 1;
+
 export function computeHeadcountSuggestion(
-  podCount: 1 | 2 | 3,
+  podCount: number,
   ptoEnabled: boolean,
   holidaysEnabled: boolean,
 ): HeadcountSuggestion {
@@ -170,7 +175,7 @@ export function computeHeadcountSuggestion(
  * minimum down so the suggestion no longer over-staffs the team.
  */
 export function computeHeadcountSuggestionForCoverage(
-  podCount: 1 | 2 | 3,
+  podCount: number,
   weeklyHoursPerPod: number[],
   ptoEnabled: boolean,
   holidaysEnabled: boolean,
@@ -232,12 +237,14 @@ export function computeHeadcountSuggestionForCoverage(
   };
 }
 
-/** Backwards-compatible static map (recommended values for default PTO+holidays on). */
-export const SUGGESTED_HEADCOUNT_PER_POD: Record<1 | 2 | 3, number> = {
-  1: computeHeadcountSuggestion(1, true, true).recommendedPerPod,
-  2: computeHeadcountSuggestion(2, true, true).recommendedPerPod,
-  3: computeHeadcountSuggestion(3, true, true).recommendedPerPod,
-};
+/** Backwards-compatible static map (recommended values for default PTO+holidays on).
+ *  v2.8.0: extended from 1..3 to 1..10. */
+export const SUGGESTED_HEADCOUNT_PER_POD: Record<number, number> = Object.fromEntries(
+  Array.from({ length: MAX_POD_COUNT }, (_, i) => {
+    const n = i + 1;
+    return [n, computeHeadcountSuggestion(n, true, true).recommendedPerPod];
+  }),
+);
 
 export interface ShiftBlock {
   engineerId: number;

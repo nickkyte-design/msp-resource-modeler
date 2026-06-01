@@ -69,7 +69,8 @@ export interface SchedulerEngineerInput {
 
 export interface SchedulerInput {
   year: number;
-  podCount: 1 | 2 | 3;
+  /** v2.8.0: now supports 1..10 (up from 1..3). */
+  podCount: number;
   engineers: SchedulerEngineerInput[];
   /**
    * Manual-override shifts already on the calendar.
@@ -136,7 +137,7 @@ function yearBounds(year: number): { startMs: number; endMs: number } {
 /** Build the candidate list for a pod, distributing engineers across pods. */
 function partitionEngineers(
   engineers: SchedulerEngineerInput[],
-  podCount: 1 | 2 | 3,
+  podCount: number,
 ): Map<number, SchedulerEngineerInput[]> {
   const pools = new Map<number, SchedulerEngineerInput[]>();
   for (let p = 1; p <= podCount; p++) pools.set(p, []);

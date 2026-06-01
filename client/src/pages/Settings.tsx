@@ -115,7 +115,7 @@ export default function SettingsPage() {
     );
   }
 
-  const podCount = settings.podCount as 1 | 2 | 3;
+  const podCount = settings.podCount; // v2.8.0: now 1..10
   const fallback = computeHeadcountSuggestion(podCount, settings.ptoEnabled, settings.holidaysEnabled);
   const suggestion = podCoverageRows && podCoverageRows.length > 0
     ? computeHeadcountSuggestionForCoverage(
@@ -151,25 +151,27 @@ export default function SettingsPage() {
               Each pod requires independent 24/7 coverage with one on-call engineer per pod at any time.
             </p>
           </header>
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            {[1, 2, 3].map((n) => (
+          {/* v2.8.0: 1..10 selector (was 1..3). 5×2 grid keeps cards compact. */}
+          <div className="grid grid-cols-5 gap-2 mb-5">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
               <button
                 key={n}
                 onClick={() => updateSettings.mutate({ podCount: n })}
-                className={`relative h-24 rounded-lg border-2 transition-all flex flex-col items-center justify-center gap-1 ${
+                className={`relative h-20 rounded-lg border-2 transition-all flex flex-col items-center justify-center gap-0.5 ${
                   podCount === n
                     ? "border-primary bg-primary/5 text-primary"
                     : "border-border hover:border-primary/40 hover:bg-muted/50"
                 }`}
+                aria-label={`${n} pod${n === 1 ? "" : "s"}`}
               >
-                <span className="font-display text-2xl font-semibold">
+                <span className="font-display text-xl font-semibold">
                   {n}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {n === 1 ? "Single Pod" : `${n} Pods`}
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {n === 1 ? "Pod" : "Pods"}
                 </span>
                 {podCount === n && (
-                  <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />
+                  <CheckCircle2 className="absolute top-1.5 right-1.5 h-3.5 w-3.5 text-primary" />
                 )}
               </button>
             ))}
