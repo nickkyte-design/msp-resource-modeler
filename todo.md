@@ -338,17 +338,17 @@
 - [x] Full vitest suite green: 178 tests across 20 files (175 → 178 = +3)
 - [x] Save checkpoint
 
-## v2.8.0 — Clear-and-regenerate combo + Applied badge on registry rows (PAUSED, deferred to v2.9.0)
+## v2.9.0 — Clear-and-regenerate combo + Applied badge on registry rows
 
-- [ ] Audit `timeOff` + `holidays` schema for a usable `createdAt` (or add one) to drive lastAppliedAt
-- [ ] `server/db.ts`: add `getHolidayAppliedSummary(year)` returning `Record<date, { engineerCount, lastAppliedAt }>` keyed by date
-- [ ] `server/routers.ts`: add `holidays.appliedSummary({year})` query
-- [ ] `server/routers.ts`: add `holidays.clearAndRegenerate({year})` combo mutation that calls clearTimeOffForYear(year, "HOLIDAY") then re-runs schedule.generate; returns `{ removed, regenerated: stats }`
-- [ ] UI: replace standalone "Clear applied holiday rows" with "Clear & re-generate" primary destructive button (keep the count badge); also keep a dedicated clear-only outline action for advanced users
-- [ ] UI: in the holiday-registry table, add an "Applied" column showing a green pill ("Applied N · 2h ago") or a grey pill ("Not applied") per row, sourced from appliedSummary
-- [ ] Vitest: appliedSummary returns expected map shape on a fresh apply; combo mutation removes + regenerates atomically
-- [ ] Bump APP_VERSION (deferred)
-- [ ] Save checkpoint (deferred)
+- [x] Audited `timeOff` + `holidays` schemas: both already had `createdAt` timestamps, so per-row last-apply derivation works with no migration
+- [x] `server/db.ts`: added pure helper `summarizeHolidayApplied(rows)` + async wrapper `getHolidayAppliedSummary(year)` that groups HOLIDAY rows by date → `{ engineerCount, lastAppliedAt }` taking MAX(createdAt)
+- [x] `server/routers.ts`: refactored `schedule.generate` body into `regenerateScheduleForYear(year)` helper; added `holidays.appliedSummary({year})` query and `holidays.clearAndRegenerate({year})` combo mutation returning `{ removed, shifts, coverage }`
+- [x] UI: added "Clear & re-generate" amber primary button next to the existing Clear-applied outline button (keep the count badge), with a confirm dialog that lists what is preserved (registry, PTO, manual shift overrides) vs cleared (materialized HOLIDAY rows)
+- [x] UI: added "Applied" column to the holiday-registry table grid (now 5 cols: Date / Label / Region / Applied / delete) with emerald `<Activity/> N · 2h ago` pill or dashed "Not applied" pill per row
+- [x] Vitest: added `server/appliedSummary.test.ts` with 7 tests covering empty input, PTO exclusion, MAX(createdAt) for lastAppliedAt, multi-date bucketing, null createdAt handling, string createdAt handling, and realistic mixed-region scenario
+- [x] Bumped APP_VERSION to 2.9.0 + timezone test assertion
+- [x] Full vitest suite green: 191 tests across 22 files (184 → 191 = +7)
+- [x] Save checkpoint
 
 ## v2.8.0 — Raise pod count cap from 3 to 10
 

@@ -26,6 +26,7 @@ import {
   deleteHoliday,
   deleteLocation,
   deleteShift,
+  getHolidayAppliedSummary,
   getSettings,
   listEngineers,
   listHolidays,
@@ -80,6 +81,100 @@ const podCoverageInputSchema = z.object({
   coverageHoursPerDay: z.number().int().min(1).max(24),
   anchorTimezone: timezoneSchema,
 });
+
+/**
+ * v2.9.0 — shared schedule-generation routine used by both `schedule.generate`
+ * and `holidays.clearAndRegenerate`. Extracted so the combo mutation does not
+ * duplicate the 4-step pipeline. Returns the same shape as `schedule.generate`.
+ */
+async function regenerateScheduleForYear(year: number) {
+  const settings = await getSettings();
+  if (!settings) throw new Error("Settings not initialized");
+  const podCount = settings.podCount;
+
+  const allEngineers = await listEngineers();
+  const activeIds = allEngineers.filter((e) => e.active).map((e) => e.id);
+
+  if (settings.ptoEnabled) await clearTimeOffForYear(year, "PTO");
+  if (settings.holidaysEnabled) await clearTimeOffForYear(year, "HOLIDAY");
+  const assignedRows = assignTimeOff(
+    activeIds,
+    year,
+    settings.ptoEnabled,
+    settings.holidaysEnabled,
+  );
+  await bulkInsertTimeOff(
+    assignedRows.map((r) => ({
+      engineerId: r.engineerId,
+      kind: r.kind,
+      date: r.date,
+      scheduleYear: year,
+    })),
+  );
+
+  const timeOffRows = await listTimeOffForYear(year);
+  const timeOffByEng = new Map<number, Set<string>>();
+  for (const t of timeOffRows) {
+    if (!timeOffByEng.has(t.engineerId)) timeOffByEng.set(t.engineerId, new Set());
+    timeOffByEng.get(t.engineerId)!.add(t.date);
+  }
+
+  const existingOverrides = await listManualOverridesForYear(year);
+  const coverageRows = await listPodCoverage();
+  const podProfiles: PodCoverageProfile[] = coverageRows.map((r) => ({
+    podNumber: r.podNumber,
+    daysOfWeek: r.daysOfWeek,
+    coverageStartHour: r.coverageStartHour,
+    coverageHoursPerDay: r.coverageHoursPerDay,
+    anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+  }));
+
+  const result = generateSchedule({
+    year,
+    podCount,
+    engineers: allEngineers
+      .filter((e) => e.active)
+      .map((e) => ({
+        id: e.id,
+        active: e.active,
+        podNumber: e.podNumber,
+        softPreferences:
+          (e.softPreferences as SoftPreferences | null) ?? DEFAULT_SOFT_PREFERENCES,
+        hardPreferences:
+          (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
+        timeOffDates: timeOffByEng.get(e.id) ?? new Set(),
+        timezone: e.timezone as Timezone,
+      })),
+    existingShifts: existingOverrides.map((o) => ({
+      engineerId: o.engineerId,
+      podNumber: o.podNumber,
+      startMs: Number(o.startMs),
+      durationHours: o.durationHours,
+    })),
+    podProfiles,
+  });
+
+  await clearAutoShiftsForYear(year);
+  await bulkInsertShifts(
+    result.shifts.map((s) => ({
+      engineerId: s.engineerId,
+      podNumber: s.podNumber,
+      startMs: s.startMs,
+      durationHours: s.durationHours,
+      scheduleYear: year,
+      manualOverride: false,
+    })),
+  );
+
+  return {
+    year,
+    totalShifts: result.shifts.length + existingOverrides.length,
+    autoShifts: result.shifts.length,
+    manualOverrides: existingOverrides.length,
+    totalGapHours: result.totalGapHours,
+    gapHoursPerPod: result.gapHoursPerPod,
+  };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -321,105 +416,8 @@ export const appRouter = router({
         const settings = await getSettings();
         if (!settings) throw new Error("Settings not initialized");
         const year = input?.year ?? settings.scheduleYear;
-        const podCount = settings.podCount;
-
-        // Step 1: assign PTO/holidays first (if enabled and not already assigned).
-        const allEngineers = await listEngineers();
-        const activeIds = allEngineers.filter((e) => e.active).map((e) => e.id);
-
-        // v2.5.0: only clear the kind we're about to replace, so canonical
-        // Apply-to-roster HOLIDAY rows survive a regenerate when the random
-        // Holiday toggle is off. Same idea for PTO.
-        if (settings.ptoEnabled) await clearTimeOffForYear(year, "PTO");
-        if (settings.holidaysEnabled) await clearTimeOffForYear(year, "HOLIDAY");
-        const assignedRows = assignTimeOff(
-          activeIds,
-          year,
-          settings.ptoEnabled,
-          settings.holidaysEnabled,
-        );
-        await bulkInsertTimeOff(
-          assignedRows.map((r) => ({
-            engineerId: r.engineerId,
-            kind: r.kind,
-            date: r.date,
-            scheduleYear: year,
-          })),
-        );
-
-        // Step 2: build engineer-keyed time-off set from the *full* table
-        // (canonical Apply-to-roster + just-assigned random rows).
-        const timeOffRows = await listTimeOffForYear(year);
-        const timeOffByEng = new Map<number, Set<string>>();
-        for (const t of timeOffRows) {
-          if (!timeOffByEng.has(t.engineerId)) timeOffByEng.set(t.engineerId, new Set());
-          timeOffByEng.get(t.engineerId)!.add(t.date);
-        }
-
-        // Step 2.5: load existing manual overrides so the scheduler accounts for
-        // them in the 45h/168h cap when assigning new auto shifts.
-        const existingOverrides = await listManualOverridesForYear(year);
-
-        // Step 2.7: load per-pod coverage profiles. Missing rows fall back to 24×7
-        // inside the scheduler, so this is safe even if the user never edited Settings.
-        const coverageRows = await listPodCoverage();
-        const podProfiles: PodCoverageProfile[] = coverageRows.map((r) => ({
-          podNumber: r.podNumber,
-          daysOfWeek: r.daysOfWeek,
-          coverageStartHour: r.coverageStartHour,
-          coverageHoursPerDay: r.coverageHoursPerDay,
-          anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
-        }));
-
-        // Step 3: generate schedule.
-        const result = generateSchedule({
-          year,
-          podCount,
-          engineers: allEngineers
-            .filter((e) => e.active)
-            .map((e) => ({
-              id: e.id,
-              active: e.active,
-              podNumber: e.podNumber,
-              softPreferences:
-                (e.softPreferences as SoftPreferences | null) ?? DEFAULT_SOFT_PREFERENCES,
-              hardPreferences:
-                (e.hardPreferences as HardPreferences | null) ?? DEFAULT_HARD_PREFERENCES,
-              timeOffDates: timeOffByEng.get(e.id) ?? new Set(),
-              // v2.5.0: pass engineer timezone so the scheduler resolves
-              // time_off date strings against the engineer's local calendar.
-              timezone: e.timezone as Timezone,
-            })),
-          existingShifts: existingOverrides.map((o) => ({
-            engineerId: o.engineerId,
-            podNumber: o.podNumber,
-            startMs: Number(o.startMs),
-            durationHours: o.durationHours,
-          })),
-          podProfiles,
-        });
-
-        // Step 4: persist shifts. Preserve manual overrides; clear only auto shifts.
-        await clearAutoShiftsForYear(year);
-        await bulkInsertShifts(
-          result.shifts.map((s) => ({
-            engineerId: s.engineerId,
-            podNumber: s.podNumber,
-            startMs: s.startMs,
-            durationHours: s.durationHours,
-            scheduleYear: year,
-            manualOverride: false,
-          })),
-        );
-
-        return {
-          year,
-          totalShifts: result.shifts.length + existingOverrides.length,
-          autoShifts: result.shifts.length,
-          manualOverrides: existingOverrides.length,
-          totalGapHours: result.totalGapHours,
-          gapHoursPerPod: result.gapHoursPerPod,
-        };
+        // v2.9.0: factored into shared helper so the combo mutation can reuse it.
+        return regenerateScheduleForYear(year);
       }),
   }),
 
@@ -927,6 +925,28 @@ export const appRouter = router({
         const holidayCount = rows.filter((r) => r.kind.toUpperCase() === "HOLIDAY").length;
         await clearTimeOffForYear(input.year, "HOLIDAY");
         return { removed: holidayCount, year: input.year };
+      }),
+    // v2.9.0 — returns per-date summary of currently-applied HOLIDAY time-off
+    // rows so the registry table can show an "Applied N · timestamp" badge per
+    // row. Keyed by date string "YYYY-MM-DD" (matches the holidays.date column).
+    appliedSummary: publicProcedure
+      .input(z.object({ year: z.number().int() }))
+      .query(async ({ input }) => {
+        return getHolidayAppliedSummary(input.year);
+      }),
+    // v2.9.0 — one-click combo: wipe stale HOLIDAY time-off rows for the year,
+    // then immediately regenerate the schedule so freed slots are filled. Used
+    // when the user removed holidays from the registry but materialized rows
+    // are still blocking the scheduler. Returns both the removed count and the
+    // full regenerate stats so the UI can show a single composite toast.
+    clearAndRegenerate: publicProcedure
+      .input(z.object({ year: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const rows = await listTimeOffForYear(input.year);
+        const removed = rows.filter((r) => r.kind.toUpperCase() === "HOLIDAY").length;
+        await clearTimeOffForYear(input.year, "HOLIDAY");
+        const stats = await regenerateScheduleForYear(input.year);
+        return { removed, regenerated: stats };
       }),
     // v2.4.1 — one-click reconcile. Removes only region-preset rows
     // (US/IN/SG/UK) for the year, reloads them, then re-applies to the

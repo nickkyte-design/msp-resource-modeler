@@ -31,6 +31,8 @@ import {
   Trash2,
   Wand2,
   CalendarX2,
+  Activity,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -78,6 +80,24 @@ function formatHolidayDate(ymd: string): string {
   });
 }
 
+/** v2.9.0: "2h ago" / "3d ago" / "just now" for last-applied timestamps. */
+function formatRelativeTime(ms: number, nowMs: number = Date.now()): string {
+  if (!ms || ms <= 0) return "";
+  const diff = nowMs - ms;
+  if (diff < 0) return "just now";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
 interface Props {
   scheduleYear: number;
   holidaysPerYear: number;
@@ -104,6 +124,12 @@ export default function HolidayManagementSection({
     for (const day of Object.values(timeOffSummary.byDay)) n += day.holiday.length;
     return n;
   }, [timeOffSummary]);
+
+  // v2.9.0 — per-date applied summary so the registry table can show an
+  // "Applied N · timestamp" badge on each row. Keyed by "YYYY-MM-DD".
+  const { data: appliedSummary } = trpc.holidays.appliedSummary.useQuery({
+    year: scheduleYear,
+  });
 
   const updateSettings = trpc.settings.update.useMutation({
     onSuccess: () => utils.settings.get.invalidate(),
@@ -168,6 +194,27 @@ export default function HolidayManagementSection({
     onError: (err) => toast.error(err.message),
   });
 
+  // v2.9.0 — one-click combo: clear stale HOLIDAY rows then regenerate the
+  // schedule. Use after editing the holiday registry when you want the freed
+  // slots filled in the same action.
+  const clearAndRegenerate = trpc.holidays.clearAndRegenerate.useMutation({
+    onSuccess: async (res) => {
+      await Promise.all([
+        utils.schedule.list.invalidate(),
+        utils.timeOff.summaryByDay.invalidate(),
+        utils.holidays.appliedSummary.invalidate(),
+      ]);
+      const stats = res.regenerated;
+      const removedStr = res.removed === 0
+        ? "No applied holiday rows to remove"
+        : `Removed ${res.removed.toLocaleString()} applied holiday row${res.removed === 1 ? "" : "s"}`;
+      toast.success(
+        `${removedStr}; regenerated ${stats.totalShifts.toLocaleString()} shifts for ${stats.year} (gap: ${stats.totalGapHours.toLocaleString()}h).`,
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // v2.4.1 — one-click "Re-apply all region presets": clears all US/IN/SG
   // holiday rows, reloads each region's canonical preset, then applies to
   // the roster. Custom holidays are preserved.
@@ -210,6 +257,8 @@ export default function HolidayManagementSection({
   // v2.4.1 reconcile confirm dialog
   const [confirmReapplyAll, setConfirmReapplyAll] = useState(false);
   const [confirmClearApplied, setConfirmClearApplied] = useState(false);
+  // v2.9.0 combo-action confirm dialog
+  const [confirmClearAndRegen, setConfirmClearAndRegen] = useState(false);
 
   const totalCount = rows.length;
   const target = holidaysPerYear;
@@ -420,6 +469,37 @@ export default function HolidayManagementSection({
               </>
             )}
           </Button>
+          {/* v2.9.0: Clear + Regenerate combo (primary destructive). */}
+          <Button
+            variant="default"
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={() => setConfirmClearAndRegen(true)}
+            disabled={
+              clearAndRegenerate.isPending || appliedHolidayRowCount === 0
+            }
+            title={
+              appliedHolidayRowCount === 0
+                ? "No applied holiday rows to clear. Generate Schedule by itself in the Schedule view."
+                : `One-click: removes all ${appliedHolidayRowCount.toLocaleString()} applied HOLIDAY rows and immediately regenerates the schedule so freed slots are filled.`
+            }
+          >
+            {clearAndRegenerate.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Clearing + regenerating…
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4" />
+                Clear &amp; re-generate
+                {appliedHolidayRowCount > 0 ? (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-800/30 px-1.5 text-[10px] font-medium tabular-nums text-white">
+                    {appliedHolidayRowCount.toLocaleString()}
+                  </span>
+                ) : null}
+              </>
+            )}
+          </Button>
           {sortedRows.length > 0 && engineerList.length > 0 ? (
             <div className="flex flex-col gap-1 text-xs text-muted-foreground md:items-end">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -569,10 +649,11 @@ export default function HolidayManagementSection({
 
       {/* Holiday list */}
       <div className="rounded-lg border border-border/60 overflow-hidden">
-        <div className="grid grid-cols-[1fr_2fr_auto_auto] gap-0 bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[1fr_2fr_auto_auto_auto] gap-0 bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <span>Date</span>
           <span>Label</span>
           <span className="text-right pr-4">Region</span>
+          <span className="text-right pr-4">Applied</span>
           <span className="w-8" />
         </div>
         {isLoading ? (
@@ -590,10 +671,13 @@ export default function HolidayManagementSection({
           </div>
         ) : (
           <ul className="divide-y divide-border/60">
-            {sortedRows.map((row) => (
+            {sortedRows.map((row) => {
+              // v2.9.0: per-row Applied badge derived from holidays.appliedSummary.
+              const applied = appliedSummary?.[row.date];
+              return (
               <li
                 key={row.id}
-                className="grid grid-cols-[1fr_2fr_auto_auto] items-center gap-0 px-4 py-2.5 hover:bg-muted/20 transition-colors"
+                className="grid grid-cols-[1fr_2fr_auto_auto_auto] items-center gap-0 px-4 py-2.5 hover:bg-muted/20 transition-colors"
               >
                 <span className="text-sm tabular-nums">
                   {formatHolidayDate(row.date)}
@@ -618,6 +702,27 @@ export default function HolidayManagementSection({
                     {REGION_LABELS[row.region as Region] ?? row.region}
                   </span>
                 </span>
+                <span className="text-xs text-right pr-4">
+                  {applied ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 tabular-nums"
+                      title={`Applied to ${applied.engineerCount} engineer${applied.engineerCount === 1 ? "" : "s"} · last apply ${new Date(applied.lastAppliedAt).toLocaleString()}`}
+                    >
+                      <Activity className="h-3 w-3" />
+                      {applied.engineerCount}
+                      <span className="text-muted-foreground font-normal">
+                        · {formatRelativeTime(applied.lastAppliedAt)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full border border-dashed border-border/60 text-muted-foreground"
+                      title="This holiday has not been materialized to any engineer's roster yet. Click 'Apply to roster' above to populate time-off rows."
+                    >
+                      Not applied
+                    </span>
+                  )}
+                </span>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -630,7 +735,8 @@ export default function HolidayManagementSection({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
@@ -807,6 +913,56 @@ export default function HolidayManagementSection({
               {clearApplied.isPending
                 ? "Removing…"
                 : `Remove ${appliedHolidayRowCount.toLocaleString()} row${appliedHolidayRowCount === 1 ? "" : "s"}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v2.9.0 Clear-and-regenerate combo confirmation */}
+      <AlertDialog
+        open={confirmClearAndRegen}
+        onOpenChange={(open) => !open && setConfirmClearAndRegen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear &amp; re-generate schedule?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This one-click action will, for <strong>{scheduleYear}</strong>:
+                </p>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>
+                    Remove all <strong>{appliedHolidayRowCount.toLocaleString()}</strong> materialized HOLIDAY time-off rows.
+                  </li>
+                  <li>
+                    Immediately regenerate the schedule so the freed slots are filled.
+                  </li>
+                </ol>
+                <p className="text-muted-foreground">
+                  The holiday registry above is preserved. PTO rows are untouched. Manual shift overrides are preserved.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearAndRegenerate.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={(e) => {
+                e.preventDefault();
+                clearAndRegenerate.mutate(
+                  { year: scheduleYear },
+                  { onSettled: () => setConfirmClearAndRegen(false) },
+                );
+              }}
+              disabled={clearAndRegenerate.isPending}
+            >
+              {clearAndRegenerate.isPending
+                ? "Clearing + regenerating…"
+                : "Clear & re-generate"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

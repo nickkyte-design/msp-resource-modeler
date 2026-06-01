@@ -351,6 +351,43 @@ export async function listTimeOffForYear(year: number) {
   return db.select().from(timeOff).where(eq(timeOff.scheduleYear, year));
 }
 
+/**
+ * v2.9.0: pure grouping logic, extracted for unit-testability. Given a list of
+ * timeOff rows, returns a map from date → { engineerCount, lastAppliedAt }.
+ * Only HOLIDAY rows are aggregated; PTO rows are ignored.
+ */
+export function summarizeHolidayApplied(
+  rows: Array<{ kind: string; date: string; createdAt: Date | string | null }>,
+): Record<string, { engineerCount: number; lastAppliedAt: number }> {
+  const summary: Record<string, { engineerCount: number; lastAppliedAt: number }> = {};
+  for (const r of rows) {
+    if (r.kind !== "HOLIDAY") continue;
+    const date = r.date;
+    const createdMs = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+    const existing = summary[date];
+    if (existing) {
+      existing.engineerCount += 1;
+      if (createdMs > existing.lastAppliedAt) existing.lastAppliedAt = createdMs;
+    } else {
+      summary[date] = { engineerCount: 1, lastAppliedAt: createdMs };
+    }
+  }
+  return summary;
+}
+
+/**
+ * v2.9.0: returns per-date summary of applied HOLIDAY rows for a year.
+ * Key = "YYYY-MM-DD"; value = { engineerCount, lastAppliedAt (UTC ms) }.
+ * Used by the registry "Applied" badge so users can see which rows are
+ * materialized to engineers and when they were last applied.
+ */
+export async function getHolidayAppliedSummary(
+  year: number,
+): Promise<Record<string, { engineerCount: number; lastAppliedAt: number }>> {
+  const rows = await listTimeOffForYear(year);
+  return summarizeHolidayApplied(rows);
+}
+
 export async function clearTimeOffForYear(year: number, kind?: "PTO" | "HOLIDAY") {
   const db = await getDb();
   if (!db) return;
