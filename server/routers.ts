@@ -914,6 +914,19 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return applyHolidaysToRoster(input.year);
       }),
+    // v2.7.0 — remove every materialized HOLIDAY time-off row for the year
+    // (registry untouched). Use when stale rows survive after the user removes
+    // holidays from the registry and would otherwise keep blocking the
+    // scheduler. Returns the count of rows that were removed so the UI can
+    // surface a meaningful toast.
+    clearAppliedRows: publicProcedure
+      .input(z.object({ year: z.number().int() }))
+      .mutation(async ({ input }) => {
+        const rows = await listTimeOffForYear(input.year);
+        const holidayCount = rows.filter((r) => r.kind.toUpperCase() === "HOLIDAY").length;
+        await clearTimeOffForYear(input.year, "HOLIDAY");
+        return { removed: holidayCount, year: input.year };
+      }),
     // v2.4.1 — one-click reconcile. Removes only region-preset rows
     // (US/IN/SG/UK) for the year, reloads them, then re-applies to the
     // roster. CUSTOM rows are preserved so user-entered dates survive.

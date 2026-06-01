@@ -211,7 +211,6 @@ vi.mock("./db", () => ({
   bulkUpdatePreferences: vi.fn(),
   clearAutoShiftsForYear: vi.fn(),
   clearShiftsForYear: vi.fn(),
-  clearTimeOffForYear: vi.fn(),
   createEngineer: vi.fn(),
   createLocation: vi.fn(),
   createShift: vi.fn(),
@@ -231,7 +230,20 @@ vi.mock("./db", () => ({
   ]),
   listShiftsForYear: vi.fn(async () => []),
   listShiftsInRange: vi.fn(async () => []),
-  listTimeOffForYear: vi.fn(async () => []),
+  // v2.7.0: stateful mock so clearAppliedRows can read + delete the
+  // materialized timeOff rows produced by applyHolidaysToRoster above.
+  listTimeOffForYear: vi.fn(async (year: number) =>
+    state.insertedTimeOff
+      .filter((r) => r.scheduleYear === year)
+      .map((r) => ({ ...r })),
+  ),
+  clearTimeOffForYear: vi.fn(async (year: number, kind?: "PTO" | "HOLIDAY") => {
+    state.clearedKind = kind ?? "ALL";
+    state.clearedYear = year;
+    state.insertedTimeOff = state.insertedTimeOff.filter(
+      (r) => r.scheduleYear !== year || (kind ? r.kind !== kind : false),
+    );
+  }),
   seedDefaultDataIfEmpty: vi.fn(),
   updateEngineer: vi.fn(),
   updateLocation: vi.fn(),
@@ -327,6 +339,46 @@ describe("holidays router (with mocked db)", () => {
     expect((await caller.holidays.list({ year: 2026 })).length).toBe(10);
     await caller.holidays.clear({ year: 2026 });
     expect((await caller.holidays.list({ year: 2026 })).length).toBe(0);
+  });
+
+  // ---- v2.7.0 clearAppliedRows ----
+  it("clearAppliedRows removes every materialized HOLIDAY row for the year", async () => {
+    const caller = appRouter.createCaller(ctx());
+    await caller.holidays.loadPreset({ region: "US", year: 2026, replace: true });
+    await caller.holidays.applyToRoster({ year: 2026 });
+    expect(state.insertedTimeOff.length).toBe(22); // 11 × 2 active eng
+    const r = await caller.holidays.clearAppliedRows({ year: 2026 });
+    expect(r.removed).toBe(22);
+    expect(r.year).toBe(2026);
+    expect(state.insertedTimeOff.length).toBe(0);
+    // Registry stays intact.
+    expect((await caller.holidays.list({ year: 2026 })).length).toBe(11);
+  });
+
+  it("clearAppliedRows on a year with zero materialized rows returns removed=0", async () => {
+    const caller = appRouter.createCaller(ctx());
+    const r = await caller.holidays.clearAppliedRows({ year: 2026 });
+    expect(r.removed).toBe(0);
+    expect(r.year).toBe(2026);
+  });
+
+  it("clearAppliedRows preserves PTO rows (only HOLIDAY rows are removed)", async () => {
+    const caller = appRouter.createCaller(ctx());
+    // Seed: 4 HOLIDAY rows from applyToRoster, plus 2 fake PTO rows added
+    // directly to mock state to mimic the real DB shape.
+    await caller.holidays.loadPreset({ region: "US", year: 2026, replace: true });
+    await caller.holidays.applyToRoster({ year: 2026 });
+    state.insertedTimeOff.push(
+      { engineerId: 1, kind: "PTO", date: "2026-08-15", scheduleYear: 2026 },
+      { engineerId: 2, kind: "PTO", date: "2026-08-16", scheduleYear: 2026 },
+    );
+    const before = state.insertedTimeOff.length;
+    expect(before).toBe(24); // 22 holiday + 2 PTO
+    const r = await caller.holidays.clearAppliedRows({ year: 2026 });
+    expect(r.removed).toBe(22);
+    // The 2 PTO rows must survive.
+    expect(state.insertedTimeOff.length).toBe(2);
+    expect(state.insertedTimeOff.every((row) => row.kind === "PTO")).toBe(true);
   });
 
   // ---- v2.4.1 reapplyAllPresets ----

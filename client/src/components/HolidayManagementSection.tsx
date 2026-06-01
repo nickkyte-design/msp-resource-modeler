@@ -30,6 +30,7 @@ import {
   Sparkles,
   Trash2,
   Wand2,
+  CalendarX2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -91,6 +92,18 @@ export default function HolidayManagementSection({
     year: scheduleYear,
   });
   const { data: engineerList = [] } = trpc.engineers.list.useQuery();
+  // v2.7.0 — lightweight count of materialized HOLIDAY time-off rows for the
+  // year, surfaced in the "Clear applied holiday rows" confirm dialog. Reuses
+  // the existing summaryByDay query so we don't add a new endpoint.
+  const { data: timeOffSummary } = trpc.timeOff.summaryByDay.useQuery({
+    year: scheduleYear,
+  });
+  const appliedHolidayRowCount = useMemo(() => {
+    if (!timeOffSummary) return 0;
+    let n = 0;
+    for (const day of Object.values(timeOffSummary.byDay)) n += day.holiday.length;
+    return n;
+  }, [timeOffSummary]);
 
   const updateSettings = trpc.settings.update.useMutation({
     onSuccess: () => utils.settings.get.invalidate(),
@@ -130,6 +143,27 @@ export default function HolidayManagementSection({
       toast.success(
         `Applied ${res.holidaysApplied} holiday${res.holidaysApplied === 1 ? "" : "s"} to ${res.engineersAffected} engineer${res.engineersAffected === 1 ? "" : "s"} = ${res.rowsInserted.toLocaleString()} time-off row${res.rowsInserted === 1 ? "" : "s"}.`,
       );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // v2.7.0 — "Clear applied holiday rows": remove every materialized HOLIDAY
+  // time-off row for the year so the scheduler stops treating stale holidays
+  // as blockers. Registry rows above are untouched. Use after editing the
+  // registry if you don't intend to re-Apply right away.
+  const clearApplied = trpc.holidays.clearAppliedRows.useMutation({
+    onSuccess: async (res) => {
+      await Promise.all([
+        utils.schedule.list.invalidate(),
+        utils.timeOff.summaryByDay.invalidate(),
+      ]);
+      if (res.removed === 0) {
+        toast.info(`No applied holiday rows to remove for ${res.year}.`);
+      } else {
+        toast.success(
+          `Removed ${res.removed.toLocaleString()} applied holiday row${res.removed === 1 ? "" : "s"} for ${res.year}. Re-generate the schedule to fill the freed slots.`,
+        );
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -175,6 +209,7 @@ export default function HolidayManagementSection({
   }>(null);
   // v2.4.1 reconcile confirm dialog
   const [confirmReapplyAll, setConfirmReapplyAll] = useState(false);
+  const [confirmClearApplied, setConfirmClearApplied] = useState(false);
 
   const totalCount = rows.length;
   const target = holidaysPerYear;
@@ -354,6 +389,34 @@ export default function HolidayManagementSection({
               <>
                 <RefreshCw className="h-4 w-4" />
                 Re-apply all region presets
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            className="bg-card/40"
+            onClick={() => setConfirmClearApplied(true)}
+            disabled={clearApplied.isPending || appliedHolidayRowCount === 0}
+            title={
+              appliedHolidayRowCount === 0
+                ? "No materialized holiday time-off rows to remove for this schedule year."
+                : `Removes all ${appliedHolidayRowCount.toLocaleString()} materialized HOLIDAY time-off rows for ${scheduleYear}. The registry above is preserved — you can re-Apply later.`
+            }
+          >
+            {clearApplied.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Removing…
+              </>
+            ) : (
+              <>
+                <CalendarX2 className="h-4 w-4" />
+                Clear applied holiday rows
+                {appliedHolidayRowCount > 0 ? (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                    {appliedHolidayRowCount.toLocaleString()}
+                  </span>
+                ) : null}
               </>
             )}
           </Button>
@@ -695,6 +758,55 @@ export default function HolidayManagementSection({
               {reapplyAll.isPending
                 ? "Reconciling…"
                 : "Re-apply all presets"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v2.7.0 Clear-applied-holidays confirmation */}
+      <AlertDialog
+        open={confirmClearApplied}
+        onOpenChange={(open) => !open && setConfirmClearApplied(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear applied holiday rows?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This removes every materialized{" "}
+                  <strong>HOLIDAY</strong> time-off row for {scheduleYear} so
+                  the scheduler stops treating those days as blockers.
+                </p>
+                <p className="text-amber-700 dark:text-amber-400">
+                  {appliedHolidayRowCount.toLocaleString()} time-off row
+                  {appliedHolidayRowCount === 1 ? "" : "s"} will be removed.
+                  PTO rows are <em>not</em> affected, and the holiday registry
+                  above stays intact — you can re-Apply at any time.
+                </p>
+                <p className="text-muted-foreground">
+                  Re-generate the schedule afterwards to fill the freed slots.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearApplied.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                clearApplied.mutate(
+                  { year: scheduleYear },
+                  { onSettled: () => setConfirmClearApplied(false) },
+                );
+              }}
+              disabled={clearApplied.isPending}
+            >
+              {clearApplied.isPending
+                ? "Removing…"
+                : `Remove ${appliedHolidayRowCount.toLocaleString()} row${appliedHolidayRowCount === 1 ? "" : "s"}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

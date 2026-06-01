@@ -326,3 +326,14 @@
 - [x] Live verified: tagged engineers 6 & 7 (BST) as UK in DB; loaded UK preset via UI (toast: "Loaded 8 holidays"); applied to roster (toast: "Applied 8 holidays to 13 engineers = 104 time-off rows"); SQL confirmed engineers 6 & 7 each received exactly the 8 canonical UK 2026 dates as `HOLIDAY` time-off rows
 - [x] Full vitest suite green: 175 tests across 20 files
 - [x] Save checkpoint
+
+## v2.7.0 — Clear-applied-holidays action (fix for stale time-off rows)
+
+- [x] Immediate hotfix: wiped stale 2026 HOLIDAY time-off rows in live DB via SQL so Pod 3 May 27 is no longer blocked (151 rows removed)
+- [x] No new db helper needed; reused `clearTimeOffForYear(year, "HOLIDAY")` already in `server/db.ts`
+- [x] `server/routers.ts`: added `holidays.clearAppliedRows({ year }) → { removed, year }` mutation that counts HOLIDAY rows from `listTimeOffForYear`, then calls `clearTimeOffForYear(year, "HOLIDAY")`
+- [x] `client/src/components/HolidayManagementSection.tsx`: added "Clear applied holiday rows" outline button next to "Re-apply all region presets", with applied-row count badge derived from `trpc.timeOff.summaryByDay`, disabled when count=0, plus a destructive-style confirm dialog explaining PTO is preserved
+- [x] Vitest `server/holidays.test.ts`: 3 new tests — happy path removes 22 rows + leaves registry intact, zero-rows path returns removed=0, PTO-preservation path keeps PTO rows. Required upgrading the mock's `listTimeOffForYear` and `clearTimeOffForYear` to be stateful.
+- [x] Bump `APP_VERSION` to 2.7.0 + timezone test assertion
+- [x] Full vitest suite green: 178 tests across 20 files (175 → 178 = +3)
+- [x] Save checkpoint
