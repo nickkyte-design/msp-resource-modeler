@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
+import { useLocation } from 'wouter';
+import { getCurrentUser } from '@/lib/supabase';
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
+import Login from "@/pages/Login";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -32,12 +36,37 @@ function Router() {
 }
 
 function App() {
+  const [user, setUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [location] = useLocation();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+      setLoading(false);
+    };
+    checkAuth();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user && location !== '/login') {
+    return <Login />;
+  }
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          {user ? <Router /> : <Login />}
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
