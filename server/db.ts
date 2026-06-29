@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   engineers,
   holidays,
@@ -27,133 +28,115 @@ import {
   type HardPreferences,
   type SoftPreferences,
 } from "../shared/scheduling";
-import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL);
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _client = null;
     }
   }
   return _db;
 }
 
-// ====== Users (template compatibility) ======
-export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) throw new Error("User openId is required for upsert");
+// ====== Users ======
+export async function createUser(user: InsertUser) {
   const db = await getDb();
-  if (!db) return;
-
-  const values: InsertUser = { openId: user.openId };
-  const updateSet: Record<string, unknown> = {};
-  const textFields = ["name", "email", "loginMethod"] as const;
-  type TextField = (typeof textFields)[number];
-
-  const assignNullable = (field: TextField) => {
-    const value = user[field];
-    if (value === undefined) return;
-    const normalized = value ?? null;
-    values[field] = normalized;
-    updateSet[field] = normalized;
-  };
-
-  textFields.forEach(assignNullable);
-
-  if (user.lastSignedIn !== undefined) {
-    values.lastSignedIn = user.lastSignedIn;
-    updateSet.lastSignedIn = user.lastSignedIn;
-  }
-  if (user.role !== undefined) {
-    values.role = user.role;
-    updateSet.role = user.role;
-  } else if (user.openId === ENV.ownerOpenId) {
-    values.role = "admin";
-    updateSet.role = "admin";
-  }
-  if (!values.lastSignedIn) values.lastSignedIn = new Date();
-  if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  if (!db) return null;
+  await db.insert(users).values(user);
+  return getUserByUserId(user.userId);
 }
 
-export async function getUserByOpenId(openId: string) {
+export async function getUserByUserId(userId: string) {
   const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (!db) return null;
+  const result = await db.select().from(users).where(eq(users.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function updateUser(userId: string, patch: Partial<InsertUser>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(users).set(patch).where(eq(users.userId, userId));
+  return getUserByUserId(userId);
 }
 
 // ====== Settings ======
-export async function getSettings() {
+export async function getSettings(accountId: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(settings).limit(1);
+  const rows = await db.select().from(settings).where(eq(settings.accountId, accountId)).limit(1);
   if (rows.length > 0) return rows[0];
+  
   // Initialize default settings row if none exists.
   await db.insert(settings).values({
+    accountId,
     podCount: 1,
     ptoEnabled: false,
     holidaysEnabled: false,
     displayTimezone: "EDT",
     scheduleYear: DEFAULT_SCHEDULE_YEAR,
   });
-  const created = await db.select().from(settings).limit(1);
+  const created = await db.select().from(settings).where(eq(settings.accountId, accountId)).limit(1);
   return created[0] ?? null;
 }
 
-export async function updateSettings(patch: Partial<InsertSettings>) {
+export async function updateSettings(accountId: string, patch: Partial<InsertSettings>) {
   const db = await getDb();
   if (!db) return null;
-  const existing = await getSettings();
+  const existing = await getSettings(accountId);
   if (!existing) return null;
-  await db.update(settings).set(patch).where(eq(settings.id, existing.id));
-  const rows = await db.select().from(settings).where(eq(settings.id, existing.id)).limit(1);
-  return rows[0] ?? null;
+  await db.update(settings).set(patch).where(eq(settings.accountId, accountId));
+  return getSettings(accountId);
 }
 
 // ====== Engineers ======
-export async function listEngineers() {
+export async function listEngineers(accountId: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(engineers).orderBy(asc(engineers.sortOrder), asc(engineers.id));
+  return db.select().from(engineers).where(eq(engineers.accountId, accountId)).orderBy(asc(engineers.sortOrder), asc(engineers.id));
 }
 
-export async function getEngineer(id: number) {
+export async function getEngineer(id: number, accountId: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(engineers).where(eq(engineers.id, id)).limit(1);
+  const rows = await db.select().from(engineers).where(and(eq(engineers.id, id), eq(engineers.accountId, accountId))).limit(1);
   return rows[0] ?? null;
 }
 
-export async function createEngineer(eng: InsertEngineer) {
+export async function createEngineer(accountId: string, eng: InsertEngineer) {
   const db = await getDb();
   if (!db) return null;
-  await db.insert(engineers).values(eng);
-  const rows = await db.select().from(engineers).orderBy(desc(engineers.id)).limit(1);
+  const fullEng = { ...eng, accountId };
+  await db.insert(engineers).values(fullEng);
+  const rows = await db.select().from(engineers).where(eq(engineers.accountId, accountId)).orderBy(desc(engineers.id)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function updateEngineer(id: number, patch: Partial<InsertEngineer>) {
+export async function updateEngineer(id: number, accountId: string, patch: Partial<InsertEngineer>) {
   const db = await getDb();
   if (!db) return null;
-  await db.update(engineers).set(patch).where(eq(engineers.id, id));
-  return getEngineer(id);
+  await db.update(engineers).set(patch).where(and(eq(engineers.id, id), eq(engineers.accountId, accountId)));
+  return getEngineer(id, accountId);
 }
 
-export async function deleteEngineer(id: number) {
+export async function deleteEngineer(id: number, accountId: string) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(engineers).where(eq(engineers.id, id));
-  await db.delete(timeOff).where(eq(timeOff.engineerId, id));
-  await db.delete(shifts).where(eq(shifts.engineerId, id));
+  await db.delete(engineers).where(and(eq(engineers.id, id), eq(engineers.accountId, accountId)));
+  await db.delete(timeOff).where(and(eq(timeOff.engineerId, id), eq(timeOff.accountId, accountId)));
+  await db.delete(shifts).where(and(eq(shifts.engineerId, id), eq(shifts.accountId, accountId)));
 }
 
 export async function bulkUpdatePreferences(
+  accountId: string,
   ids: number[],
   soft: SoftPreferences | null,
   hard: HardPreferences | null,
@@ -164,27 +147,28 @@ export async function bulkUpdatePreferences(
   if (soft) patch.softPreferences = soft as unknown as InsertEngineer["softPreferences"];
   if (hard) patch.hardPreferences = hard as unknown as InsertEngineer["hardPreferences"];
   if (Object.keys(patch).length === 0) return;
-  await db.update(engineers).set(patch).where(inArray(engineers.id, ids));
+  await db.update(engineers).set(patch).where(and(inArray(engineers.id, ids), eq(engineers.accountId, accountId)));
 }
 
-/** Seed default engineers if the table is empty. */
+// ====== Seeding ======
 let _seedPromise: Promise<void> | null = null;
-export async function seedDefaultDataIfEmpty(): Promise<void> {
+export async function seedDefaultDataIfEmpty(accountId: string): Promise<void> {
   if (_seedPromise) return _seedPromise;
   _seedPromise = (async () => {
-    await _doSeed();
+    await _doSeed(accountId);
   })();
   return _seedPromise;
 }
 
-async function _doSeed() {
+async function _doSeed(accountId: string) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(engineers).limit(1);
+  const existing = await db.select().from(engineers).where(eq(engineers.accountId, accountId)).limit(1);
   if (existing.length === 0) {
     const rows: InsertEngineer[] = [];
     for (let i = 1; i <= DEFAULT_TEAM_SIZE; i++) {
       rows.push({
+        accountId,
         name: String(i),
         timezone: "EDT",
         podNumber: null,
@@ -197,165 +181,155 @@ async function _doSeed() {
     await db.insert(engineers).values(rows);
   }
 
-  const existingLocs = await db.select().from(locations).limit(1);
+  const existingLocs = await db.select().from(locations).where(eq(locations.accountId, accountId)).limit(1);
   if (existingLocs.length === 0) {
-    const locRows: InsertLocation[] = DEFAULT_LOCATIONS.map((code) => ({ code }));
+    const locRows: InsertLocation[] = DEFAULT_LOCATIONS.map((code) => ({ accountId, code }));
     await db.insert(locations).values(locRows);
   }
 
   // Ensure settings row exists.
-  await getSettings();
+  await getSettings(accountId);
 }
 
 // ====== Locations ======
-export async function listLocations() {
+export async function listLocations(accountId: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(locations).orderBy(asc(locations.id));
+  return db.select().from(locations).where(eq(locations.accountId, accountId)).orderBy(asc(locations.id));
 }
 
-export async function createLocation(loc: InsertLocation) {
+export async function createLocation(accountId: string, loc: InsertLocation) {
   const db = await getDb();
   if (!db) return null;
-  await db.insert(locations).values(loc);
-  const rows = await db.select().from(locations).orderBy(desc(locations.id)).limit(1);
+  const fullLoc = { ...loc, accountId };
+  await db.insert(locations).values(fullLoc);
+  const rows = await db.select().from(locations).where(eq(locations.accountId, accountId)).orderBy(desc(locations.id)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function updateLocation(id: number, patch: Partial<InsertLocation>) {
+export async function updateLocation(id: number, accountId: string, patch: Partial<InsertLocation>) {
   const db = await getDb();
   if (!db) return null;
-  await db.update(locations).set(patch).where(eq(locations.id, id));
-  const rows = await db.select().from(locations).where(eq(locations.id, id)).limit(1);
+  await db.update(locations).set(patch).where(and(eq(locations.id, id), eq(locations.accountId, accountId)));
+  const rows = await db.select().from(locations).where(and(eq(locations.id, id), eq(locations.accountId, accountId))).limit(1);
   return rows[0] ?? null;
 }
 
-export async function deleteLocation(id: number) {
+export async function deleteLocation(id: number, accountId: string) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(locations).where(eq(locations.id, id));
+  await db.delete(locations).where(and(eq(locations.id, id), eq(locations.accountId, accountId)));
 }
 
 // ====== Pod Coverage ======
-export async function listPodCoverage() {
+export async function listPodCoverage(accountId: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(podCoverage).orderBy(asc(podCoverage.podNumber));
+  return db.select().from(podCoverage).where(eq(podCoverage.accountId, accountId)).orderBy(asc(podCoverage.podNumber));
 }
 
-export async function upsertPodCoverage(row: InsertPodCoverage) {
+export async function upsertPodCoverage(accountId: string, row: InsertPodCoverage) {
   const db = await getDb();
   if (!db) return null;
+  const fullRow = { ...row, accountId };
   const existing = await db
     .select()
     .from(podCoverage)
-    .where(eq(podCoverage.podNumber, row.podNumber))
+    .where(and(eq(podCoverage.podNumber, row.podNumber), eq(podCoverage.accountId, accountId)))
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(podCoverage).values(row);
+    await db.insert(podCoverage).values(fullRow);
   } else {
-    await db.update(podCoverage).set(row).where(eq(podCoverage.podNumber, row.podNumber));
+    await db.update(podCoverage).set(fullRow).where(and(eq(podCoverage.podNumber, row.podNumber), eq(podCoverage.accountId, accountId)));
   }
   const rows = await db
     .select()
     .from(podCoverage)
-    .where(eq(podCoverage.podNumber, row.podNumber))
+    .where(and(eq(podCoverage.podNumber, row.podNumber), eq(podCoverage.accountId, accountId)))
     .limit(1);
   return rows[0] ?? null;
 }
 
 // ====== Shifts ======
-export async function listShiftsForYear(year: number) {
+export async function listShiftsForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(shifts).where(eq(shifts.scheduleYear, year)).orderBy(asc(shifts.startMs));
+  return db.select().from(shifts).where(and(eq(shifts.scheduleYear, year), eq(shifts.accountId, accountId))).orderBy(asc(shifts.startMs));
 }
 
-/** Shifts whose start falls inside [windowStartMs, windowEndMs). */
-export async function listShiftsInRange(year: number, windowStartMs: number, windowEndMs: number) {
-  const all = await listShiftsForYear(year);
+export async function listShiftsInRange(accountId: string, year: number, windowStartMs: number, windowEndMs: number) {
+  const all = await listShiftsForYear(accountId, year);
   return all.filter((s) => s.startMs >= windowStartMs && s.startMs < windowEndMs);
 }
 
-/** Clear only auto-generated shifts (manualOverride = false). Keeps manual placements safe. */
-export async function clearAutoShiftsForYear(year: number) {
+export async function clearAutoShiftsForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(shifts).where(
-    and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, false)),
+    and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, false), eq(shifts.accountId, accountId)),
   );
 }
 
-export async function clearShiftsForYear(year: number) {
+export async function clearShiftsForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(shifts).where(eq(shifts.scheduleYear, year));
+  await db.delete(shifts).where(and(eq(shifts.scheduleYear, year), eq(shifts.accountId, accountId)));
 }
 
-/**
- * Delete every manual-override row for a given year. Returns the number of
- * rows removed so the caller can surface a toast. Auto-generated shifts are
- * untouched. Used by the Settings “Clear all manual overrides” action when
- * the user wants a clean slate (e.g. after Auto-fix ≤8h was over-aggressive).
- */
-export async function clearAllManualOverridesForYear(year: number): Promise<number> {
+export async function clearAllManualOverridesForYear(accountId: string, year: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const existing = await listManualOverridesForYear(year);
+  const existing = await listManualOverridesForYear(accountId, year);
   if (existing.length === 0) return 0;
   await db
     .delete(shifts)
-    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true)));
+    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true), eq(shifts.accountId, accountId)));
   return existing.length;
 }
 
-export async function listManualOverridesForYear(year: number) {
+export async function listManualOverridesForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(shifts)
-    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true)))
+    .where(and(eq(shifts.scheduleYear, year), eq(shifts.manualOverride, true), eq(shifts.accountId, accountId)))
     .orderBy(asc(shifts.startMs));
 }
 
-export async function createShift(row: InsertShift) {
+export async function createShift(accountId: string, row: InsertShift) {
   const db = await getDb();
   if (!db) return null;
-  await db.insert(shifts).values(row);
-  const rows = await db.select().from(shifts).orderBy(desc(shifts.id)).limit(1);
+  const fullRow = { ...row, accountId };
+  await db.insert(shifts).values(fullRow);
+  const rows = await db.select().from(shifts).where(eq(shifts.accountId, accountId)).orderBy(desc(shifts.id)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function deleteShift(id: number) {
+export async function deleteShift(id: number, accountId: string) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(shifts).where(eq(shifts.id, id));
+  await db.delete(shifts).where(and(eq(shifts.id, id), eq(shifts.accountId, accountId)));
 }
 
-export async function bulkInsertShifts(rows: InsertShift[]) {
+export async function bulkInsertShifts(accountId: string, rows: InsertShift[]) {
   const db = await getDb();
   if (!db || rows.length === 0) return;
-  // Insert in batches of 1000 to avoid query size limits.
+  const fullRows = rows.map(r => ({ ...r, accountId }));
   const BATCH = 1000;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const slice = rows.slice(i, i + BATCH);
+  for (let i = 0; i < fullRows.length; i += BATCH) {
+    const slice = fullRows.slice(i, i + BATCH);
     await db.insert(shifts).values(slice);
   }
 }
 
 // ====== Time Off ======
-export async function listTimeOffForYear(year: number) {
+export async function listTimeOffForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(timeOff).where(eq(timeOff.scheduleYear, year));
+  return db.select().from(timeOff).where(and(eq(timeOff.scheduleYear, year), eq(timeOff.accountId, accountId)));
 }
 
-/**
- * v2.9.0: pure grouping logic, extracted for unit-testability. Given a list of
- * timeOff rows, returns a map from date → { engineerCount, lastAppliedAt }.
- * Only HOLIDAY rows are aggregated; PTO rows are ignored.
- */
 export function summarizeHolidayApplied(
   rows: Array<{ kind: string; date: string; createdAt: Date | string | null }>,
 ): Record<string, { engineerCount: number; lastAppliedAt: number }> {
@@ -375,57 +349,51 @@ export function summarizeHolidayApplied(
   return summary;
 }
 
-/**
- * v2.9.0: returns per-date summary of applied HOLIDAY rows for a year.
- * Key = "YYYY-MM-DD"; value = { engineerCount, lastAppliedAt (UTC ms) }.
- * Used by the registry "Applied" badge so users can see which rows are
- * materialized to engineers and when they were last applied.
- */
 export async function getHolidayAppliedSummary(
+  accountId: string,
   year: number,
 ): Promise<Record<string, { engineerCount: number; lastAppliedAt: number }>> {
-  const rows = await listTimeOffForYear(year);
+  const rows = await listTimeOffForYear(accountId, year);
   return summarizeHolidayApplied(rows);
 }
 
-export async function clearTimeOffForYear(year: number, kind?: "PTO" | "HOLIDAY") {
+export async function clearTimeOffForYear(accountId: string, year: number, kind?: "PTO" | "HOLIDAY") {
   const db = await getDb();
   if (!db) return;
   if (kind) {
-    await db.delete(timeOff).where(and(eq(timeOff.scheduleYear, year), eq(timeOff.kind, kind)));
+    await db.delete(timeOff).where(and(eq(timeOff.scheduleYear, year), eq(timeOff.kind, kind), eq(timeOff.accountId, accountId)));
   } else {
-    await db.delete(timeOff).where(eq(timeOff.scheduleYear, year));
+    await db.delete(timeOff).where(and(eq(timeOff.scheduleYear, year), eq(timeOff.accountId, accountId)));
   }
 }
 
-export async function bulkInsertTimeOff(rows: InsertTimeOff[]) {
+export async function bulkInsertTimeOff(accountId: string, rows: InsertTimeOff[]) {
   const db = await getDb();
   if (!db || rows.length === 0) return;
+  const fullRows = rows.map(r => ({ ...r, accountId }));
   const BATCH = 1000;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const slice = rows.slice(i, i + BATCH);
+  for (let i = 0; i < fullRows.length; i += BATCH) {
+    const slice = fullRows.slice(i, i + BATCH);
     await db.insert(timeOff).values(slice);
   }
 }
 
 // ====== Holidays ======
-export async function listHolidays(year: number) {
+export async function listHolidays(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(holidays)
-    .where(eq(holidays.scheduleYear, year))
+    .where(and(eq(holidays.scheduleYear, year), eq(holidays.accountId, accountId)))
     .orderBy(asc(holidays.date));
 }
 
-export async function upsertHoliday(row: InsertHoliday) {
+export async function upsertHoliday(accountId: string, row: InsertHoliday) {
   const db = await getDb();
   if (!db) return null;
-  // v2.4.1: natural key is (year, date, region) so the same calendar date can
-  // exist for multiple regions independently (e.g. Jan 1 is both a US and SG
-  // holiday). applyHolidaysToRoster dedupes the resulting per-engineer rows.
   const region = row.region ?? "CUSTOM";
+  const fullRow = { ...row, accountId, region };
   const existing = await db
     .select()
     .from(holidays)
@@ -434,11 +402,12 @@ export async function upsertHoliday(row: InsertHoliday) {
         eq(holidays.scheduleYear, row.scheduleYear),
         eq(holidays.date, row.date),
         eq(holidays.region, region),
+        eq(holidays.accountId, accountId),
       ),
     )
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(holidays).values(row);
+    await db.insert(holidays).values(fullRow);
   } else {
     await db
       .update(holidays)
@@ -453,30 +422,25 @@ export async function upsertHoliday(row: InsertHoliday) {
         eq(holidays.scheduleYear, row.scheduleYear),
         eq(holidays.date, row.date),
         eq(holidays.region, region),
+        eq(holidays.accountId, accountId),
       ),
     )
     .limit(1);
   return rows[0] ?? null;
 }
 
-export async function deleteHoliday(id: number) {
+export async function deleteHoliday(id: number, accountId: string) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(holidays).where(eq(holidays.id, id));
+  await db.delete(holidays).where(and(eq(holidays.id, id), eq(holidays.accountId, accountId)));
 }
 
-export async function clearHolidaysForYear(year: number) {
+export async function clearHolidaysForYear(accountId: string, year: number) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(holidays).where(eq(holidays.scheduleYear, year));
+  await db.delete(holidays).where(and(eq(holidays.scheduleYear, year), eq(holidays.accountId, accountId)));
 }
 
-/**
- * Region match policy for v2.4.0 region-aware holiday application:
- *   - holiday.region === "CUSTOM"   → applies to every active engineer
- *   - engineer.region === "GLOBAL"  → engineer receives every holiday
- *   - otherwise                     → engineer.region must equal holiday.region
- */
 export function holidayAppliesToEngineer(
   holidayRegion: string,
   engineerRegion: string,
@@ -486,15 +450,7 @@ export function holidayAppliesToEngineer(
   return holidayRegion === engineerRegion;
 }
 
-/**
- * Materialize the canonical holiday list into per-engineer time_off rows of kind=HOLIDAY.
- * Idempotent: clears existing HOLIDAY rows for the year first, then re-inserts.
- *
- * v2.4.0: respects per-engineer `region` tagging. Holidays in region R only
- * materialize for engineers in region R or region GLOBAL; CUSTOM holidays apply
- * to everyone (back-compat for hand-entered dates).
- */
-export async function applyHolidaysToRoster(year: number): Promise<{
+export async function applyHolidaysToRoster(accountId: string, year: number): Promise<{
   holidaysApplied: number;
   engineersAffected: number;
   rowsInserted: number;
@@ -508,10 +464,9 @@ export async function applyHolidaysToRoster(year: number): Promise<{
       rowsInserted: 0,
       perRegion: {},
     };
-  const holidayRows = await listHolidays(year);
-  const activeEngineers = (await listEngineers()).filter((e) => e.active);
-  // Reset HOLIDAY time_off for the year so this is idempotent.
-  await clearTimeOffForYear(year, "HOLIDAY");
+  const holidayRows = await listHolidays(accountId, year);
+  const activeEngineers = (await listEngineers(accountId)).filter((e) => e.active);
+  await clearTimeOffForYear(accountId, year, "HOLIDAY");
   if (holidayRows.length === 0 || activeEngineers.length === 0) {
     return {
       holidaysApplied: holidayRows.length,
@@ -523,19 +478,12 @@ export async function applyHolidaysToRoster(year: number): Promise<{
   const toInsert: InsertTimeOff[] = [];
   const perRegion: Record<string, number> = {};
   const engineerHitSet = new Set<number>();
-  // v2.4.1: an engineer might be eligible for the same date via multiple
-  // regions (e.g. Jan 1 from both US and SG presets when their region=GLOBAL).
-  // Dedupe per-engineer per-date so a single HOLIDAY row is emitted.
-  const seen = new Set<string>(); // `${engineerId}|${date}`
+  const seen = new Set<string>();
   for (const eng of activeEngineers) {
     for (const h of holidayRows) {
       if (!holidayAppliesToEngineer(h.region, eng.region)) continue;
       const key = `${eng.id}|${h.date}`;
       if (seen.has(key)) {
-        // Engineer already getting this date from a different region.
-        // Still count it toward the originating region for the perRegion tally
-        // so the user can see that the preset was "considered" even if it
-        // didn't create an additional row.
         perRegion[h.region] = (perRegion[h.region] ?? 0) + 1;
         continue;
       }
@@ -550,7 +498,7 @@ export async function applyHolidaysToRoster(year: number): Promise<{
       engineerHitSet.add(eng.id);
     }
   }
-  await bulkInsertTimeOff(toInsert);
+  await bulkInsertTimeOff(accountId, toInsert);
   return {
     holidaysApplied: holidayRows.length,
     engineersAffected: engineerHitSet.size,
@@ -558,4 +506,3 @@ export async function applyHolidaysToRoster(year: number): Promise<{
     perRegion,
   };
 }
-
