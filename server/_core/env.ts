@@ -1,10 +1,16 @@
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
-  isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  supabaseUrl: process.env.SUPABASE_URL || 'https://vkxryacaewoqgiilvtst.supabase.co',
+  supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  databaseUrl: process.env.DATABASE_URL || '',
+  blobToken: process.env.BLOB_READ_WRITE_TOKEN || '',
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: process.env.PORT || '3000',
 };
+
+if (!ENV.databaseUrl && process.env.NODE_ENV === 'production') {
+  throw new Error('DATABASE_URL is required in production');
+}
+
+if (!ENV.supabaseServiceKey && process.env.NODE_ENV === 'production') {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in production');
+}

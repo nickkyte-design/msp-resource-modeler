@@ -1,0 +1,47 @@
+{
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": null,
+  "env": [
+    {
+      "key": "DATABASE_URL",
+      "description": "PostgreSQL connection string from Supabase",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "SUPABASE_URL",
+      "description": "Supabase project URL",
+      "value": "https://vkxryacaewoqgiilvtst.supabase.co"
+    },
+    {
+      "key": "SUPABASE_ANON_KEY",
+      "description": "Supabase anonymous key (public)",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "SUPABASE_SERVICE_ROLE_KEY",
+      "description": "Supabase service role key (secret)",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "BLOB_READ_WRITE_TOKEN",
+      "description": "Vercel Blob storage token",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "NODE_ENV",
+      "description": "Node environment",
+      "value": "production"
+    },
+    {
+      "key": "PORT",
+      "description": "Server port",
+      "value": "3000"
+    }
+  ]
+}
