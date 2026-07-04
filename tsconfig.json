@@ -22,8 +22,11 @@
     "baseUrl": ".",
     "paths": {
       "@": ["./client/src"],
+      "@/*": ["./client/src/*"],
       "@shared": ["./shared"],
-      "@assets": ["./attached_assets"]
+      "@shared/*": ["./shared/*"],
+      "@assets": ["./attached_assets"],
+      "@assets/*": ["./attached_assets/*"]
     }
   },
   "include": ["client", "server", "shared"],

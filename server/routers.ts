@@ -87,16 +87,16 @@ const podCoverageInputSchema = z.object({
  * and `holidays.clearAndRegenerate`. Extracted so the combo mutation does not
  * duplicate the 4-step pipeline. Returns the same shape as `schedule.generate`.
  */
-async function regenerateScheduleForYear(year: number) {
-  const settings = await getSettings();
+async function regenerateScheduleForYear(accountId: string, year: number) {
+  const settings = await getSettings(accountId);
   if (!settings) throw new Error("Settings not initialized");
   const podCount = settings.podCount;
 
-  const allEngineers = await listEngineers();
+  const allEngineers = await listEngineers(accountId);
   const activeIds = allEngineers.filter((e) => e.active).map((e) => e.id);
 
-  if (settings.ptoEnabled) await clearTimeOffForYear(year, "PTO");
-  if (settings.holidaysEnabled) await clearTimeOffForYear(year, "HOLIDAY");
+  if (settings.ptoEnabled) await clearTimeOffForYear(accountId, year, "PTO");
+  if (settings.holidaysEnabled) await clearTimeOffForYear(accountId, year, "HOLIDAY");
   const assignedRows = assignTimeOff(
     activeIds,
     year,
