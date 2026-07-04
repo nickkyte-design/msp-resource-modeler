@@ -1,16 +1,13 @@
-import { useEffect, useState } from 'react';
-import { useLocation } from 'wouter';
-import { getCurrentUser } from '@/lib/supabase';
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import Login from "@/pages/Login";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Balance from "./pages/Balance";
 import CalendarPage from "./pages/Calendar";
+import Dashboard from "./pages/Dashboard";
 import GapReport from "./pages/GapReport";
 import HeatMap from "./pages/HeatMap";
 import PodsLocations from "./pages/PodsLocations";
@@ -21,7 +18,9 @@ function Router() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={CalendarPage} />
+        <Route path="/" component={Dashboard} />
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/calendar" component={CalendarPage} />
         <Route path="/roster" component={Roster} />
         <Route path="/pods" component={PodsLocations} />
         <Route path="/heatmap" component={HeatMap} />
@@ -36,37 +35,12 @@ function Router() {
 }
 
 function App() {
-  const [user, setUser] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [location] = useLocation();
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const currentUser = await getCurrentUser();
-      setUser(currentUser);
-      setLoading(false);
-    };
-    checkAuth();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user && location !== '/login') {
-    return <Login />;
-  }
-
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          {user ? <Router /> : <Login />}
+          <Router />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

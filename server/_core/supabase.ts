@@ -6,23 +6,31 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 /**
  * Browser-safe Supabase client (anon key for public operations).
+ * Null when SUPABASE_ANON_KEY is not configured.
  */
-export const supabaseBrowser = createClient(supabaseUrl, supabaseAnonKey);
+export const supabaseBrowser = supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 /**
  * Server-side Supabase client (service role for admin operations).
+ * Null when SUPABASE_SERVICE_ROLE_KEY is not configured.
  */
-export const supabaseServer = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+export const supabaseServer = supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : null;
 
 /**
  * Verify JWT token and extract user.
+ * Returns null if Supabase is not configured or verification fails.
  */
 export async function verifyJWT(token: string) {
+  if (!supabaseServer) return null;
   try {
     const {
       data: { user },

@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Flame,
+  LayoutDashboard,
   Layers3,
   MapPin,
   Scale,
@@ -28,7 +29,8 @@ import { useState } from "react";
 import AskAiDrawer from "./AskAiDrawer";
 
 const menuItems = [
-  { icon: CalendarDays, label: "Calendar", path: "/" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: CalendarDays, label: "Calendar", path: "/calendar" },
   { icon: Users, label: "Roster", path: "/roster" },
   { icon: Layers3, label: "Pods & Locations", path: "/pods" },
   { icon: Flame, label: "Heat Map", path: "/heatmap" },
@@ -48,7 +50,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const isMobile = useIsMobile();
-  const activeItem = menuItems.find((m) => m.path === location);
+  const activeItem = menuItems.find((m) => m.path === location || (m.path === "/" && location === "/dashboard"));
   const [askOpen, setAskOpen] = useState(false);
   const currentYear = new Date().getUTCFullYear();
 
@@ -77,7 +79,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         <SidebarContent>
           <SidebarMenu className="px-2 py-3 gap-0.5">
             {menuItems.map((item) => {
-              const isActive = location === item.path;
+              const isActive =
+                location === item.path ||
+                (item.path === "/" && location === "/dashboard");
               return (
                 <SidebarMenuItem key={item.path}>
                   <Link href={item.path}>

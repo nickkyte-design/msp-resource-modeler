@@ -3,16 +3,29 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://vkxryacaewoqgiilvtst.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const _supabase = supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
+const noopAuth = {
+  signUp: async () => ({ data: null, error: new Error('Supabase not configured') }),
+  signInWithPassword: async () => ({ data: null, error: new Error('Supabase not configured') }),
+  signInWithOtp: async () => ({ data: null, error: new Error('Supabase not configured') }),
+  signOut: async () => ({ error: null }),
+  getSession: async () => ({ data: { session: null }, error: null }),
+  getUser: async () => ({ data: { user: null }, error: null }),
+};
+
+const supabaseProxy = {
+  auth: _supabase ? _supabase.auth : noopAuth,
+};
+
+export const supabase = (supabaseProxy as typeof supabaseProxy & { auth: typeof supabaseProxy.auth });
 
 /**
  * Sign up with email and password.
  */
 export async function signUp(email: string, password: string) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+  if (!_supabase) return { data: null, error: new Error('Supabase not configured') };
+  const { data, error } = await _supabase.auth.signUp({ email, password });
   return { data, error };
 }
 
@@ -20,10 +33,8 @@ export async function signUp(email: string, password: string) {
  * Sign in with email and password.
  */
 export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  if (!_supabase) return { data: null, error: new Error('Supabase not configured') };
+  const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
   return { data, error };
 }
 
@@ -31,9 +42,8 @@ export async function signIn(email: string, password: string) {
  * Send a magic link to the user's email.
  */
 export async function signInWithMagicLink(email: string) {
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-  });
+  if (!_supabase) return { data: null, error: new Error('Supabase not configured') };
+  const { data, error } = await _supabase.auth.signInWithOtp({ email });
   return { data, error };
 }
 
@@ -41,7 +51,8 @@ export async function signInWithMagicLink(email: string) {
  * Sign out the current user.
  */
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
+  if (!_supabase) return { error: null };
+  const { error } = await _supabase.auth.signOut();
   return { error };
 }
 
@@ -49,9 +60,8 @@ export async function signOut() {
  * Get the current user session.
  */
 export async function getSession() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  if (!_supabase) return null;
+  const { data: { session } } = await _supabase.auth.getSession();
   return session;
 }
 
@@ -59,8 +69,7 @@ export async function getSession() {
  * Get the current user.
  */
 export async function getCurrentUser() {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  if (!_supabase) return null;
+  const { data: { user } } = await _supabase.auth.getUser();
   return user;
 }

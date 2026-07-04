@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from "express";
 import * as db from "../db";
-import { supabaseBrowser } from "./supabase";
 
 export function registerAuthRoutes(app: Express) {
   // Supabase handles auth via browser client
