@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'wouter';
+import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'signin' | 'signup' | 'magic'>('signin');
-  const [, navigate] = useNavigate();
+  const [, navigate] = useLocation();
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
