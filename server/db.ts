@@ -18,6 +18,12 @@ import {
   shifts,
   timeOff,
   users,
+  staff,
+  type InsertStaff,
+  projects,
+  type InsertProject,
+  assignments,
+  type InsertAssignment,
 } from "../drizzle/schema";
 import {
   DEFAULT_HARD_PREFERENCES,
@@ -506,3 +512,148 @@ export async function applyHolidaysToRoster(accountId: string, year: number): Pr
     perRegion,
   };
 }
+
+// ============================================================================
+// MSP Resource Modeler — Staff helpers
+// ============================================================================
+
+export async function listStaff(accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(staff).where(eq(staff.accountId, accountId)).orderBy(asc(staff.id));
+}
+
+export async function getStaffById(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(staff).where(and(eq(staff.id, id), eq(staff.accountId, accountId))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createStaff(accountId: string, row: Omit<InsertStaff, "accountId">) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(staff).values({ ...row, accountId });
+  const rows = await db.select().from(staff).where(eq(staff.accountId, accountId)).orderBy(desc(staff.id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateStaff(id: number, accountId: string, patch: Partial<Omit<InsertStaff, "accountId" | "id">>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(staff).set({ ...patch, updatedAt: new Date() }).where(and(eq(staff.id, id), eq(staff.accountId, accountId)));
+  return getStaffById(id, accountId);
+}
+
+export async function deleteStaff(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(assignments).where(and(eq(assignments.staffId, id), eq(assignments.accountId, accountId)));
+  await db.delete(staff).where(and(eq(staff.id, id), eq(staff.accountId, accountId)));
+}
+
+// ============================================================================
+// MSP Resource Modeler — Project helpers
+// ============================================================================
+
+export async function listProjects(accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(projects).where(eq(projects.accountId, accountId)).orderBy(asc(projects.id));
+}
+
+export async function getProjectById(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(projects).where(and(eq(projects.id, id), eq(projects.accountId, accountId))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createProject(accountId: string, row: Omit<InsertProject, "accountId">) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(projects).values({ ...row, accountId });
+  const rows = await db.select().from(projects).where(eq(projects.accountId, accountId)).orderBy(desc(projects.id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateProject(id: number, accountId: string, patch: Partial<Omit<InsertProject, "accountId" | "id">>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(projects).set({ ...patch, updatedAt: new Date() }).where(and(eq(projects.id, id), eq(projects.accountId, accountId)));
+  return getProjectById(id, accountId);
+}
+
+export async function deleteProject(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(assignments).where(and(eq(assignments.projectId, id), eq(assignments.accountId, accountId)));
+  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.accountId, accountId)));
+}
+
+// ============================================================================
+// MSP Resource Modeler — Assignment helpers
+// ============================================================================
+
+export async function listAssignments(accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assignments).where(eq(assignments.accountId, accountId)).orderBy(asc(assignments.id));
+}
+
+export async function listAssignmentsByStaff(staffId: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assignments).where(and(eq(assignments.staffId, staffId), eq(assignments.accountId, accountId))).orderBy(asc(assignments.id));
+}
+
+export async function listAssignmentsByProject(projectId: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assignments).where(and(eq(assignments.projectId, projectId), eq(assignments.accountId, accountId))).orderBy(asc(assignments.id));
+}
+
+export async function getAssignmentById(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(assignments).where(and(eq(assignments.id, id), eq(assignments.accountId, accountId))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createAssignment(accountId: string, row: Omit<InsertAssignment, "accountId">) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(assignments).values({ ...row, accountId });
+  const rows = await db.select().from(assignments).where(eq(assignments.accountId, accountId)).orderBy(desc(assignments.id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateAssignment(id: number, accountId: string, patch: Partial<Omit<InsertAssignment, "accountId" | "id">>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(assignments).set({ ...patch, updatedAt: new Date() }).where(and(eq(assignments.id, id), eq(assignments.accountId, accountId)));
+  return getAssignmentById(id, accountId);
+}
+
+export async function deleteAssignment(id: number, accountId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(assignments).where(and(eq(assignments.id, id), eq(assignments.accountId, accountId)));
+}
+
+/**
+ * Compute total hours/week allocated for a staff member across all active assignments.
+ */
+export async function getStaffAllocatedHours(staffId: number, accountId: string): Promise<number> {
+  const rows = await listAssignmentsByStaff(staffId, accountId);
+  return rows.reduce((sum, a) => sum + a.hoursPerWeek, 0);
+}
+
+/**
+ * Compute total hours/week assigned to a project across all active assignments.
+ */
+export async function getProjectAssignedHours(projectId: number, accountId: string): Promise<number> {
+  const rows = await listAssignmentsByProject(projectId, accountId);
+  return rows.reduce((sum, a) => sum + a.hoursPerWeek, 0);
+}
+
