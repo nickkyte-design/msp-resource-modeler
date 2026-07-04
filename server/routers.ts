@@ -10,6 +10,10 @@ import {
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { staffRouter } from "./routers/staff";
+import { projectsRouter } from "./routers/projects";
+import { scheduleRouter } from "./routers/schedule";
+import { gapsRouter } from "./routers/gaps";
 import {
   applyHolidaysToRoster,
   bulkInsertShifts,
@@ -1026,6 +1030,12 @@ export const appRouter = router({
         return { answer, context: ctx };
       }),
   }),
+
+  // ====== MSP Resource Modeler ======
+  staff: staffRouter,
+  projects: projectsRouter,
+  schedule: scheduleRouter,
+  resourceGaps: gapsRouter,
 });
 
 export type AppRouter = typeof appRouter;

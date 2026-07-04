@@ -140,3 +140,63 @@ export const holidays = pgTable("holidays", {
 
 export type Holiday = typeof holidays.$inferSelect;
 export type InsertHoliday = typeof holidays.$inferInsert;
+
+// ============================================================================
+// MSP Resource Modeler — Staff, Projects, Assignments
+// ============================================================================
+
+/**
+ * MSP Staff members — the consultants/engineers assigned to client projects.
+ */
+export const staff = pgTable("staff", {
+  id: serial("id").primaryKey(),
+  accountId: varchar("accountId", { length: 128 }).notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  role: varchar("role", { length: 64 }).notNull().default("engineer"),
+  status: varchar("status", { length: 32 }).notNull().default("active"),
+  availableHoursPerWeek: integer("availableHoursPerWeek").notNull().default(40),
+  skills: json("skills").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Staff = typeof staff.$inferSelect;
+export type InsertStaff = typeof staff.$inferInsert;
+
+/**
+ * MSP Projects — client engagements requiring staffing.
+ */
+export const projects = pgTable("projects", {
+  id: serial("id").primaryKey(),
+  accountId: varchar("accountId", { length: 128 }).notNull(),
+  name: varchar("name", { length: 256 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("planning"),
+  startDate: varchar("startDate", { length: 10 }),
+  endDate: varchar("endDate", { length: 10 }),
+  requiredHoursPerWeek: integer("requiredHoursPerWeek").notNull().default(0),
+  budget: integer("budget"),
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type InsertProject = typeof projects.$inferInsert;
+
+/**
+ * MSP Assignments — many-to-many between staff and projects, with hours/week.
+ */
+export const assignments = pgTable("assignments", {
+  id: serial("id").primaryKey(),
+  accountId: varchar("accountId", { length: 128 }).notNull(),
+  staffId: integer("staffId").notNull(),
+  projectId: integer("projectId").notNull(),
+  hoursPerWeek: integer("hoursPerWeek").notNull().default(0),
+  startDate: varchar("startDate", { length: 10 }),
+  endDate: varchar("endDate", { length: 10 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Assignment = typeof assignments.$inferSelect;
+export type InsertAssignment = typeof assignments.$inferInsert;
