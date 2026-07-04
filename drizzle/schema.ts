@@ -1,4 +1,4 @@
-import { bigint, boolean, integer, json, pgEnum, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, integer, json, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 /**
  * Core user table for Supabase Auth integration.
@@ -10,7 +10,7 @@ export const users = pgTable("users", {
   accountId: varchar("accountId", { length: 128 }).notNull(), // For multi-tenancy
   email: varchar("email", { length: 320 }).notNull(),
   name: text("name"),
-  role: pgEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: varchar("role", { length: 10 }).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -30,7 +30,7 @@ export const engineers = pgTable("engineers", {
   timezone: varchar("timezone", { length: 8 }).notNull().default("EDT"),
   podNumber: integer("podNumber"),
   active: boolean("active").notNull().default(true),
-  region: pgEnum("region", ["US", "IN", "SG", "UK", "GLOBAL"]).notNull().default("GLOBAL"),
+  region: varchar("region", { length: 16 }).notNull().default("GLOBAL"),
   softPreferences: json("softPreferences"),
   hardPreferences: json("hardPreferences"),
   sortOrder: integer("sortOrder").notNull().default(0),
