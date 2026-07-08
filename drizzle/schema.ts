@@ -156,6 +156,8 @@ export const podCoverage = mysqlTable("podCoverage", {
   coverageStartHour: int("coverageStartHour").notNull().default(0),
   /** Hours of coverage required each active day (1-24). Common: 8, 10, 12, 16, 20, 24. */
   coverageHoursPerDay: int("coverageHoursPerDay").notNull().default(24),
+  /** Number of engineers required on-call concurrently per shift slot (1-10). */
+  engineersPerShift: int("engineersPerShift").notNull().default(1),
   /** Timezone anchor for interpreting the coverage window. */
   anchorTimezone: varchar("anchorTimezone", { length: 8 }).notNull().default("EDT"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

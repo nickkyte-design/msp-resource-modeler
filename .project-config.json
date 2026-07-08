@@ -1,8 +1,8 @@
 {
   "build_command": "pnpm run build",
   "capabilities": [
-    "server",
     "db",
+    "server",
     "user"
   ],
   "dev_command": "pnpm run dev",
@@ -14,10 +14,11 @@
   ],
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663348263693/JH8dfP72atft9iLeoPx5YK",
-    "access_key_id": "ASIAZV3A2ECZGE6TILLL",
-    "secret_access_key": "a8MZvq6mFFceyeIxJ79/1Fb6iheoMGn/hGH2hVMs",
-    "session_token": "IQoJb3JpZ2luX2VjEP3//////////wEaCXVzLWVhc3QtMSJHMEUCIDdxY8rJ3svIYnN+FvivgwQlNuLJBVbVQp1LJJkPXgEAAiEAsotTllOvTyEgHQs1W/uYVR6+4/IZB1Z34URorWW0KG8q/wMIxv//////////ARAEGgw2NjUzODYwOTg4NjYiDPGg7xOFjv9ysusvvyrTA/zGLRgxpTmibW87oquOeoPn0sKdGkuEWNW7JogeHlMr/NBCEFUqx/smk8FQRZJNQwBajQ1zyQhDCflysl1B7l01NSa1qRdKWJHausIxNr/04XcIxjeym1dbKJfx9fkqapcX9l5T5oaYRODVozT6OQi02SM/A8lacWIPr87wH7nqsl4izNWMmXznGKG58X57TrtcV06/lGJfD/9BtVyvPAPvPheFRPz2oSEyJ9q34wz3NeyQTy7R6UfDXsskWKh1ioK2aQJNMNWeI1PWYfWNwS67SAx1QFzI/M+rV+oUqtc7dKujd3bKMs26I9UxD0qPjLGEkpVCV6UUQZo+FtB0o1cAgZ76AwF0XP/D7VRzwBv9FhMlP828XYcp0gV3kF17G8ZgfNzL172FoN9xMekgSU17fc+y62DIu0NtF6zVoslj56k3ZMqcQEGOnLSblc+qLJo+HIhUhRx//BTWTMUzKis1J9faREYAgPizEzjAKtG7s6TKKivnlLeemjcRu+yqeCYyYyfVUKdjVTL8ZDC6iferBk8dfK/tw47g6r+JJfr/XWvek7CSwUvToAxCXPP7eH3uh/tUYC8yEKxIMvSXRdxHi5KbRStnYfsuHTN6ixDvVlnXMNnqrdAGOp0BaPbzU7TeCHnHllvWyedDSiOh56p/FOq3av6uSHsJFvObPfup6+XFWA/5QYsqN9nk1iuVUHQUs0Z750QoQ+Bh6uI4fd3js7XgS3D51pfDpE/6j1AZ/fT1HMzdjsA+xcTemjephflMbADaNxEdFO26JqoNABuE8EKh4DOysAmZasy2qn2lgodqiQ5B7fkF/hFbUrcABPXci1Po3VNnPA==",
-    "expiration": "2026-05-19T08:23:53.000Z"
+    "access_key_id": "ASIAZV3A2ECZIZB56DLU",
+    "secret_access_key": "DlBnUEu5B0lBocfMNn3ILL6B8NHQKK2ibKccn+Nj",
+    "session_token": "IQoJb3JpZ2luX2VjENv//////////wEaCXVzLWVhc3QtMSJGMEQCICewU+f+16rZxLr+LPAXRjUOLPXYy6P9YuSabjdKIFkJAiAZN1kBrI1Jwh2oFowklXf8I5cxRmPq10PxWrNyHosA0ir/Awij//////////8BEAQaDDY2NTM4NjA5ODg2NiIMhONhudc3VD/HT/gNKtMD5ZOaGK/vg3fjmG51Lh+5bpz9cYAXP/fFPZStqDJC0WbXk6Pk8Qki5PmyfHZ5rwK+UrPXwt1MRDlBGfqA+c3o6uO2QbSJOIoBXioquOwm5fSTTFKBr1BFjRQPD7Pf0FQjTTusFFlcpSFIZJ6ytl9X2jeWBDkbon3xmX+ywFm8Uw9TNhMLxVgaTiJfQykmnuDpGCxCR1/xBQydYdaQAmUySjlUf7lRRCKUfko8xGwxbxIoloyvLdEi5QHE2f/tsi/5iiQTC0TpkgKjZjHAaxgYFqyXDsvFU5VRUwM31HW9JM39BwyMv924KCxX6ev7oO+Ze3mQGexXb3FfShEOUIwMfbmkNFZezOCizbnM/XpbTBoyVdqQ1RjpQYsHysxAk7deA1GqVR5zAl9zeyrA1GukDkigj9FbyrPqCBANTgVWm8hNEkYFZTtTLlBId2qfJ5audnn4fOV/tc1t0TC8hrSomRZjodzuEW79L2M9OxQF9+vbBXhdoPL1ddMNe4wzkqfCoavpXGbos+MD/lO7Mx6XxALJiY1CGyr/JSAh79i1iHz/JUmcNqo+O9DHHtMjHX5bO0jB3b1wWnx5jBHyJ998vEElHbeY8QelupR+Jbv1ki/F9f8w3KaH0gY6ngGMWEuiANKZ9ZqBTsOcdyM1Lgrj7IlUiTv1KIq0iCup0TqJYvnpQVRu94tJcafWYFWQ3ALMa0D2nOi6pN0CNWK10Nw0EBcP3Yqx4wOb6gwiUGXr4eblcWk8V43LyCu5XLO39KQkCeqWZh5AnL4mfIjYfG72p5IJyAuLAeKmsBrW5oDfKuE9OtKyjaoXwRctXWP9FfDxxYNuX8JevmsyjA==",
+    "expiration": "2026-06-29T14:07:24.000Z",
+    "backend": "GIT_BACKEND_S3"
   },
   "name": "msp-resource-modeler",
   "path": "/home/ubuntu/msp-resource-modeler",

@@ -1,0 +1,1 @@
+ALTER TABLE `podCoverage` ADD `engineersPerShift` int DEFAULT 1 NOT NULL;

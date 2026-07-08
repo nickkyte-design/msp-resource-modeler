@@ -128,6 +128,10 @@ export default function SettingsPage() {
         }),
         settings.ptoEnabled,
         settings.holidaysEnabled,
+        Array.from({ length: podCount }, (_, i) => {
+          const row = podCoverageRows.find((r) => r.podNumber === i + 1);
+          return (row as any)?.engineersPerShift ?? 1;
+        }),
       )
     : fallback;
   const activeCount = engineers.filter((e) => e.active).length;
@@ -148,7 +152,7 @@ export default function SettingsPage() {
           <header className="mb-6">
             <h2 className="font-display text-xl font-semibold tracking-tight">Pod Configuration</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Each pod requires independent 24/7 coverage with one on-call engineer per pod at any time.
+              Each pod requires independent coverage with configurable on-call depth (engineers per shift slot).
             </p>
           </header>
           {/* v2.8.0: 1..10 selector (was 1..3). 5×2 grid keeps cards compact. */}

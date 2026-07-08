@@ -183,6 +183,7 @@ export default function GapReport() {
         coverageStartHour: p.coverageStartHour,
         coverageHoursPerDay: p.coverageHoursPerDay,
         anchorTimezone: p.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+        engineersPerShift: (p as any).engineersPerShift ?? 1,
       });
     }
     for (let p = 1; p <= podCount; p++) {

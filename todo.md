@@ -366,3 +366,19 @@
 - [x] Live verified: dev server shows v2.8.0; Calendar renders correctly at current podCount=3
 - [x] Full vitest suite green: 184 tests across 21 files (178 → 184 = +6)
 - [x] Save checkpoint
+
+## v2.10.0 — Configurable engineers-per-shift (concurrent on-call depth per pod)
+
+- [x] Schema: add `engineersPerShift` INT column (default 1) to `podCoverage` table — migration 0010
+- [x] Shared: add `MIN_ENGINEERS_PER_SHIFT=1` / `MAX_ENGINEERS_PER_SHIFT=10` constants; extend `PodCoverageProfile` type with `engineersPerShift`
+- [x] Scheduler: loop N times per slot (N = profile.engineersPerShift) to assign N distinct engineers, excluding already-assigned engineers for that slot
+- [x] Gap detection (`shared/gaps.ts`): change coverage array to count shifts per hour, compare against required depth per pod
+- [x] HeatMap: use per-pod `engineersPerShift` as threshold instead of hardcoded 1
+- [x] GapReport: pass depth to gap detection so coverage % reflects multi-engineer requirement
+- [x] Settings UI (PodCoverageSection): add per-pod "Engineers on-call" selector (1–10)
+- [x] Copy updates: replace "one on-call engineer per pod" with dynamic text in Settings and Pods & Locations
+- [x] Routers: thread `engineersPerShift` through `pods.upsert`, `regenerateScheduleForYear`, and headcount suggestion
+- [x] Headcount suggestion: scale minimum per pod by `engineersPerShift` factor
+- [x] Tests: update no-double-booking test to allow N shifts per (pod, startMs); add new depth tests (9 new tests, 200 total passing)
+- [x] Bump APP_VERSION to 2.10.0
+- [ ] Save checkpoint (pending)

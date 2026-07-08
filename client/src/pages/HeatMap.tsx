@@ -67,6 +67,7 @@ export default function HeatMap() {
         coverageStartHour: p.coverageStartHour,
         coverageHoursPerDay: p.coverageHoursPerDay,
         anchorTimezone: p.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+        engineersPerShift: (p as any).engineersPerShift ?? 1,
       });
     }
     return Array.from({ length: podCount }, (_, i) => {
@@ -82,8 +83,14 @@ export default function HeatMap() {
     () => (selectedPod === "all" ? allShifts : allShifts.filter((s) => s.podNumber === selectedPod)),
     [allShifts, selectedPod],
   );
-  // Required coverage: full pod count when viewing all; 1 when filtered to a single pod.
-  const requiredCoverage = selectedPod === "all" ? podCount : 1;
+  // Required coverage: sum of engineersPerShift across all visible pods.
+  const requiredCoverage = useMemo(() => {
+    if (selectedPod === "all") {
+      return podProfiles.reduce((sum, p) => sum + (p.engineersPerShift ?? 1), 0);
+    }
+    const prof = podProfiles.find((p) => p.podNumber === selectedPod);
+    return prof?.engineersPerShift ?? 1;
+  }, [podProfiles, selectedPod]);
 
   // Compute hour-of-year coverage. requiredCoverage = podCount.
   // We'll aggregate by day x hour for 365 days.

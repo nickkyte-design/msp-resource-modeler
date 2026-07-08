@@ -398,156 +398,167 @@ export function generateSchedule(input: SchedulerInput): SchedulerOutput {
         const slotStartMs = ds.startMs;
         const slotDuration = ds.durationHours;
 
-        // Find an engineer with an active block covering this slot today.
-        let assigned: SchedulerEngineerInput | null = null;
-        for (const eng of pool) {
-          const block = activeBlock[eng.id];
-          if (
-            block &&
-            day >= block.startDay &&
-            day < block.endDay &&
-            block.slotIdx === slot
-          ) {
-            // Check this specific day isn't a time-off day, anchored in the
-            // engineer's own timezone (v2.5.0).
-            if (eng.timeOffDates.has(localDayKey(eng, slotStartMs))) continue;
-            // Check hard preference for this weekday.
-            if (eng.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
-            // Check rolling 168h cap.
-            if (
-              hoursInLast168h(engineerShiftHistory[eng.id], slotStartMs) +
-                slotDuration >
-              HARD_CAP_HOURS_PER_168H
-            ) {
-              continue;
-            }
-            // Check minimum rest period between consecutive shifts.
-            if (
-              violatesMinRest(engineerShiftHistory[eng.id], slotStartMs, slotDuration)
-            ) {
-              continue;
-            }
-            assigned = eng;
-            break;
-          }
-        }
+        // v2.10.0: assign N engineers per slot (concurrent on-call depth).
+        const requiredDepth = profile.engineersPerShift ?? 1;
+        const alreadyAssignedThisSlot = new Set<number>();
 
-        // If no engineer with an active block, try to start a new block for someone.
-        if (!assigned) {
-          for (let attempt = 0; attempt < pool.length; attempt++) {
-            const candidate = pool[(rotationCursor + attempt) % pool.length];
-            // Skip if engineer is mid-block for another slot (shouldn't be on-call multiple slots same day in same pod).
-            const candBlock = activeBlock[candidate.id];
-            if (candBlock && day >= candBlock.startDay && day < candBlock.endDay) {
-              continue;
-            }
-            // Engineer must be in their "on" cycle window for the next 5 days.
-            // Check candidate is on for `day` and the following 4 days.
-            const onFunc = onDayCache[candidate.id];
-            let canStartBlock = true;
-            for (let d = 0; d < SHIFTS_PER_BLOCK; d++) {
-              if (!onFunc(day + d)) {
-                canStartBlock = false;
-                break;
+        for (let depthIdx = 0; depthIdx < requiredDepth; depthIdx++) {
+          // Find an engineer with an active block covering this slot today.
+          let assigned: SchedulerEngineerInput | null = null;
+          for (const eng of pool) {
+            if (alreadyAssignedThisSlot.has(eng.id)) continue;
+            const block = activeBlock[eng.id];
+            if (
+              block &&
+              day >= block.startDay &&
+              day < block.endDay &&
+              block.slotIdx === slot
+            ) {
+              // Check this specific day isn't a time-off day, anchored in the
+              // engineer's own timezone (v2.5.0).
+              if (eng.timeOffDates.has(localDayKey(eng, slotStartMs))) continue;
+              // Check hard preference for this weekday.
+              if (eng.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
+              // Check rolling 168h cap.
+              if (
+                hoursInLast168h(engineerShiftHistory[eng.id], slotStartMs) +
+                  slotDuration >
+                HARD_CAP_HOURS_PER_168H
+              ) {
+                continue;
               }
+              // Check minimum rest period between consecutive shifts.
+              if (
+                violatesMinRest(engineerShiftHistory[eng.id], slotStartMs, slotDuration)
+              ) {
+                continue;
+              }
+              assigned = eng;
+              break;
             }
-            // We allow starting even if they aren't in cycle by overriding phase: this provides flex
-            // when pool is small. But prefer in-phase candidates first.
-            if (!canStartBlock && pool.length >= 5) continue;
-
-            // Check hard preference forbids this day.
-            if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
-            // Check soft preference: weekdayOnly => skip Sat/Sun if alternatives exist.
-            // (we'll still allow if needed, since this is soft)
-            if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
-            // Check rolling cap.
-            if (
-              hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
-                slotDuration >
-              HARD_CAP_HOURS_PER_168H
-            ) {
-              continue;
-            }
-            // Check minimum rest period between consecutive shifts.
-            if (
-              violatesMinRest(
-                engineerShiftHistory[candidate.id],
-                slotStartMs,
-                slotDuration,
-              )
-            ) {
-              continue;
-            }
-            // Check soft preference - prefer weekday-only candidates first
-            if (
-              candidate.softPreferences.weekdayOnly &&
-              (dayOfWeek === 0 || dayOfWeek === 6)
-            ) {
-              // Try later attempts before falling back here.
-              continue;
-            }
-            // Found a candidate.
-            assigned = candidate;
-            activeBlock[candidate.id] = {
-              startDay: day,
-              endDay: day + SHIFTS_PER_BLOCK,
-              slotIdx: slot,
-            };
-            rotationCursor = (rotationCursor + attempt + 1) % pool.length;
-            break;
           }
-        }
 
-        // Fallback: relax soft preferences (allow weekend even if soft pref says no).
-        if (!assigned) {
-          for (let attempt = 0; attempt < pool.length; attempt++) {
-            const candidate = pool[(rotationCursor + attempt) % pool.length];
-            const candBlock = activeBlock[candidate.id];
-            if (candBlock && day >= candBlock.startDay && day < candBlock.endDay) {
-              continue;
+          // If no engineer with an active block, try to start a new block for someone.
+          if (!assigned) {
+            for (let attempt = 0; attempt < pool.length; attempt++) {
+              const candidate = pool[(rotationCursor + attempt) % pool.length];
+              if (alreadyAssignedThisSlot.has(candidate.id)) continue;
+              // Skip if engineer is mid-block for another slot (shouldn't be on-call multiple slots same day in same pod).
+              const candBlock = activeBlock[candidate.id];
+              if (candBlock && day >= candBlock.startDay && day < candBlock.endDay) {
+                continue;
+              }
+              // Engineer must be in their "on" cycle window for the next 5 days.
+              // Check candidate is on for `day` and the following 4 days.
+              const onFunc = onDayCache[candidate.id];
+              let canStartBlock = true;
+              for (let d = 0; d < SHIFTS_PER_BLOCK; d++) {
+                if (!onFunc(day + d)) {
+                  canStartBlock = false;
+                  break;
+                }
+              }
+              // We allow starting even if they aren't in cycle by overriding phase: this provides flex
+              // when pool is small. But prefer in-phase candidates first.
+              if (!canStartBlock && pool.length >= 5) continue;
+
+              // Check hard preference forbids this day.
+              if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
+              // Check soft preference: weekdayOnly => skip Sat/Sun if alternatives exist.
+              // (we'll still allow if needed, since this is soft)
+              if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
+              // Check rolling cap.
+              if (
+                hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
+                  slotDuration >
+                HARD_CAP_HOURS_PER_168H
+              ) {
+                continue;
+              }
+              // Check minimum rest period between consecutive shifts.
+              if (
+                violatesMinRest(
+                  engineerShiftHistory[candidate.id],
+                  slotStartMs,
+                  slotDuration,
+                )
+              ) {
+                continue;
+              }
+              // Check soft preference - prefer weekday-only candidates first
+              if (
+                candidate.softPreferences.weekdayOnly &&
+                (dayOfWeek === 0 || dayOfWeek === 6)
+              ) {
+                // Try later attempts before falling back here.
+                continue;
+              }
+              // Found a candidate.
+              assigned = candidate;
+              activeBlock[candidate.id] = {
+                startDay: day,
+                endDay: day + SHIFTS_PER_BLOCK,
+                slotIdx: slot,
+              };
+              rotationCursor = (rotationCursor + attempt + 1) % pool.length;
+              break;
             }
-            if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
-            if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
-            if (
-              hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
-                slotDuration >
-              HARD_CAP_HOURS_PER_168H
-            ) {
-              continue;
-            }
-            // Min rest enforcement holds even in the soft-pref-relaxed fallback.
-            if (
-              violatesMinRest(
-                engineerShiftHistory[candidate.id],
-                slotStartMs,
-                slotDuration,
-              )
-            ) {
-              continue;
-            }
-            assigned = candidate;
-            activeBlock[candidate.id] = {
-              startDay: day,
-              endDay: day + SHIFTS_PER_BLOCK,
-              slotIdx: slot,
-            };
-            rotationCursor = (rotationCursor + attempt + 1) % pool.length;
-            break;
           }
-        }
 
-        if (assigned) {
-          const shift: ShiftBlock = {
-            engineerId: assigned.id,
-            podNumber: pod,
-            startMs: slotStartMs,
-            durationHours: slotDuration,
-          };
-          shifts.push(shift);
-          engineerShiftHistory[assigned.id].push(shift);
-        } else {
-          gapHoursPerPod[pod] += slotDuration;
-        }
+          // Fallback: relax soft preferences (allow weekend even if soft pref says no).
+          if (!assigned) {
+            for (let attempt = 0; attempt < pool.length; attempt++) {
+              const candidate = pool[(rotationCursor + attempt) % pool.length];
+              if (alreadyAssignedThisSlot.has(candidate.id)) continue;
+              const candBlock = activeBlock[candidate.id];
+              if (candBlock && day >= candBlock.startDay && day < candBlock.endDay) {
+                continue;
+              }
+              if (candidate.hardPreferences.forbiddenWeekdays.includes(dayOfWeek)) continue;
+              if (candidate.timeOffDates.has(localDayKey(candidate, slotStartMs))) continue;
+              if (
+                hoursInLast168h(engineerShiftHistory[candidate.id], slotStartMs) +
+                  slotDuration >
+                HARD_CAP_HOURS_PER_168H
+              ) {
+                continue;
+              }
+              // Min rest enforcement holds even in the soft-pref-relaxed fallback.
+              if (
+                violatesMinRest(
+                  engineerShiftHistory[candidate.id],
+                  slotStartMs,
+                  slotDuration,
+                )
+              ) {
+                continue;
+              }
+              assigned = candidate;
+              activeBlock[candidate.id] = {
+                startDay: day,
+                endDay: day + SHIFTS_PER_BLOCK,
+                slotIdx: slot,
+              };
+              rotationCursor = (rotationCursor + attempt + 1) % pool.length;
+              break;
+            }
+          }
+
+          if (assigned) {
+            const shift: ShiftBlock = {
+              engineerId: assigned.id,
+              podNumber: pod,
+              startMs: slotStartMs,
+              durationHours: slotDuration,
+            };
+            shifts.push(shift);
+            engineerShiftHistory[assigned.id].push(shift);
+            alreadyAssignedThisSlot.add(assigned.id);
+          } else {
+            // Count gap hours only once per unfilled depth slot.
+            gapHoursPerPod[pod] += slotDuration;
+          }
+        } // end depthIdx loop
       }
 
       // Clean up expired blocks (after the day ends).

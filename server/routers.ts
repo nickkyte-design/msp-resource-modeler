@@ -80,6 +80,8 @@ const podCoverageInputSchema = z.object({
   /** Hours per active day. Common: 8, 10, 12, 16, 20, 24. */
   coverageHoursPerDay: z.number().int().min(1).max(24),
   anchorTimezone: timezoneSchema,
+  /** v2.10.0: concurrent on-call engineers per shift slot (1-10). */
+  engineersPerShift: z.number().int().min(1).max(10).default(1),
 });
 
 /**
@@ -127,6 +129,7 @@ async function regenerateScheduleForYear(year: number) {
     coverageStartHour: r.coverageStartHour,
     coverageHoursPerDay: r.coverageHoursPerDay,
     anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+    engineersPerShift: r.engineersPerShift ?? 1,
   }));
 
   const result = generateSchedule({
@@ -496,6 +499,7 @@ export const appRouter = router({
         coverageStartHour: r.coverageStartHour,
         coverageHoursPerDay: r.coverageHoursPerDay,
         anchorTimezone: r.anchorTimezone,
+        engineersPerShift: r.engineersPerShift ?? 1,
       }));
     }),
     upsert: publicProcedure
@@ -509,6 +513,7 @@ export const appRouter = router({
           coverageStartHour: row.coverageStartHour,
           coverageHoursPerDay: row.coverageHoursPerDay,
           anchorTimezone: row.anchorTimezone,
+          engineersPerShift: row.engineersPerShift ?? 1,
         };
       }),
   }),
@@ -630,6 +635,7 @@ export const appRouter = router({
                 coverageStartHour: row.coverageStartHour,
                 coverageHoursPerDay: row.coverageHoursPerDay,
                 anchorTimezone: row.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+                engineersPerShift: row.engineersPerShift ?? 1,
               }
             : defaultCoverageProfile(podNumber);
         });
@@ -737,6 +743,7 @@ export const appRouter = router({
           coverageStartHour: r.coverageStartHour,
           coverageHoursPerDay: r.coverageHoursPerDay,
           anchorTimezone: r.anchorTimezone as PodCoverageProfile["anchorTimezone"],
+          engineersPerShift: r.engineersPerShift ?? 1,
         }));
 
         const timeOffByEng = new Map<number, Set<string>>();

@@ -75,8 +75,13 @@ export function findGaps(
 
 /**
  * Coverage-aware variant of `findGaps`. For each pod, an hour counts as a gap
- * only when (a) it is inside the pod's coverage window AND (b) no shift covers
- * it. Off-hours and off-days produce neither shifts nor gaps.
+ * only when (a) it is inside the pod's coverage window AND (b) the number of
+ * shifts covering it is less than `profile.engineersPerShift` (default 1).
+ * Off-hours and off-days produce neither shifts nor gaps.
+ *
+ * v2.10.0: Uses a Uint16Array count instead of boolean to support multi-engineer
+ * depth. Each hour with fewer engineers than required contributes
+ * `(required - actual)` gap-hours (i.e. partial depth shortfall is counted).
  */
 export function findGapsWithCoverage(
   shifts: GapInputShift[],
@@ -87,20 +92,22 @@ export function findGapsWithCoverage(
   const out: GapInterval[] = [];
   for (const profile of profiles) {
     const pod = profile.podNumber;
-    const covered = new Uint8Array(totalHours);
+    const requiredDepth = profile.engineersPerShift ?? 1;
+    // Count how many shifts cover each hour.
+    const coverCount = new Uint16Array(totalHours);
     for (const s of shifts) {
       if (s.podNumber !== pod) continue;
       const startIdx = Math.floor((s.startMs - yearStartUtcMs) / 3_600_000);
       for (let h = 0; h < s.durationHours; h++) {
         const idx = startIdx + h;
-        if (idx >= 0 && idx < totalHours) covered[idx] = 1;
+        if (idx >= 0 && idx < totalHours) coverCount[idx]++;
       }
     }
     let runStart: number | null = null;
     for (let h = 0; h < totalHours; h++) {
       const hourUtcMs = yearStartUtcMs + h * 3_600_000;
       const required = isSlotCovered(profile, hourUtcMs, 1);
-      const isGap = required && covered[h] === 0;
+      const isGap = required && coverCount[h] < requiredDepth;
       if (isGap) {
         if (runStart === null) runStart = h;
       } else if (runStart !== null) {

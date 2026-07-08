@@ -29,6 +29,8 @@ export interface PodCoverageProfile {
   coverageStartHour: number;
   coverageHoursPerDay: number;
   anchorTimezone: Timezone;
+  /** v2.10.0: how many engineers must be on-call concurrently per slot. Default 1. */
+  engineersPerShift: number;
 }
 
 /** Default 24×7 profile used when a pod has no explicit row. */
@@ -39,6 +41,7 @@ export function defaultCoverageProfile(podNumber: number, tz: Timezone = "EDT"):
     coverageStartHour: 0,
     coverageHoursPerDay: 24,
     anchorTimezone: tz,
+    engineersPerShift: 1,
   };
 }
 

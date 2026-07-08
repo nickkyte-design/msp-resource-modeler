@@ -22,6 +22,7 @@ const monFri9to5: PodCoverageProfile = {
   coverageStartHour: 9,
   coverageHoursPerDay: 8,
   anchorTimezone: "EDT",
+  engineersPerShift: 1,
 };
 
 describe("defaultCoverageProfile", () => {
@@ -159,6 +160,7 @@ describe("coverage edge cases", () => {
       coverageStartHour: 22,
       coverageHoursPerDay: 8,
       anchorTimezone: "IST",
+      engineersPerShift: 1,
     };
     const start = Date.UTC(2026, 0, 4); // Sunday UTC midnight
     const end = start + 7 * DAY;
@@ -173,6 +175,7 @@ describe("coverage edge cases", () => {
       coverageStartHour: 22,
       coverageHoursPerDay: 8,
       anchorTimezone: "IST",
+      engineersPerShift: 1,
     };
     // Pick a hour inside the wrapped window: 18:00 UTC on Jan 5 = 23:30 IST.
     const t = Date.UTC(2026, 0, 5, 18, 0);
@@ -186,6 +189,7 @@ describe("coverage edge cases", () => {
       coverageStartHour: 22,
       coverageHoursPerDay: 8,
       anchorTimezone: "IST",
+      engineersPerShift: 1,
     };
     // 12:00 UTC = 17:30 IST -> before the 22:00 IST start of the same anchor day.
     const t = Date.UTC(2026, 0, 5, 12, 0);

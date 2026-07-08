@@ -52,7 +52,7 @@ export default function PodsLocations() {
       <PageHeader
         eyebrow="Topology"
         title="Pods & Locations"
-        description="Map locations to pods for labeling. Each pod requires one on-call engineer at any time. Location labels are metadata only."
+        description="Map locations to pods for labeling. Each pod requires the configured number of on-call engineers at any time. Location labels are metadata only."
       />
 
       <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto space-y-8">

@@ -13,7 +13,7 @@ import {
   describeDaysOfWeek,
   type PodCoverageProfile,
 } from "@shared/coverage";
-import { TIMEZONES, type Timezone } from "@shared/scheduling";
+import { MAX_ENGINEERS_PER_SHIFT, TIMEZONES, type Timezone } from "@shared/scheduling";
 import { Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -63,6 +63,7 @@ export default function PodCoverageSection({ podCount }: Props) {
                 coverageStartHour: existingRow.coverageStartHour,
                 coverageHoursPerDay: existingRow.coverageHoursPerDay,
                 anchorTimezone: existingRow.anchorTimezone as Timezone,
+                engineersPerShift: (existingRow as any).engineersPerShift ?? 1,
               }
             : null;
           return (
@@ -94,6 +95,7 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
   const [anchorTimezone, setAnchorTimezone] = useState<Timezone>(
     (initial?.anchorTimezone as Timezone) ?? "EDT",
   );
+  const [engineersPerShift, setEngineersPerShift] = useState(initial?.engineersPerShift ?? 1);
 
   // Keep local state in sync if a server-side update arrives after the user landed
   // on the page — without clobbering an in-progress edit.
@@ -103,10 +105,11 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
       setCoverageStartHour(initial.coverageStartHour);
       setCoverageHoursPerDay(initial.coverageHoursPerDay);
       setAnchorTimezone(initial.anchorTimezone as Timezone);
+      setEngineersPerShift(initial.engineersPerShift ?? 1);
     }
     // intentionally only run when the *identity* of `initial` changes, not deep equality
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial?.podNumber, initial?.daysOfWeek, initial?.coverageStartHour, initial?.coverageHoursPerDay, initial?.anchorTimezone]);
+  }, [initial?.podNumber, initial?.daysOfWeek, initial?.coverageStartHour, initial?.coverageHoursPerDay, initial?.anchorTimezone, initial?.engineersPerShift]);
 
   const isDirty = useMemo(() => {
     if (!initial) return true;
@@ -114,9 +117,10 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
       initial.daysOfWeek !== daysOfWeek ||
       initial.coverageStartHour !== coverageStartHour ||
       initial.coverageHoursPerDay !== coverageHoursPerDay ||
-      initial.anchorTimezone !== anchorTimezone
+      initial.anchorTimezone !== anchorTimezone ||
+      (initial.engineersPerShift ?? 1) !== engineersPerShift
     );
-  }, [initial, daysOfWeek, coverageStartHour, coverageHoursPerDay, anchorTimezone]);
+  }, [initial, daysOfWeek, coverageStartHour, coverageHoursPerDay, anchorTimezone, engineersPerShift]);
 
   const summary = useMemo(
     () => ({
@@ -127,6 +131,7 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
         coverageStartHour,
         coverageHoursPerDay,
         anchorTimezone,
+        engineersPerShift,
       }),
     }),
     [daysOfWeek, coverageStartHour, coverageHoursPerDay, anchorTimezone, podNumber],
@@ -159,6 +164,7 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
               coverageStartHour,
               coverageHoursPerDay,
               anchorTimezone,
+              engineersPerShift,
             })
           }
         >
@@ -229,6 +235,31 @@ function PodCoverageCard({ podNumber, initial, onSave, saving }: CardProps) {
             );
           })}
         </div>
+      </div>
+
+      {/* Engineers per shift (concurrent on-call depth) */}
+      <div>
+        <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Engineers on-call
+        </Label>
+        <Select
+          value={String(engineersPerShift)}
+          onValueChange={(v) => setEngineersPerShift(parseInt(v, 10))}
+        >
+          <SelectTrigger className="mt-2 h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: MAX_ENGINEERS_PER_SHIFT }, (_, i) => i + 1).map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} {n === 1 ? "engineer" : "engineers"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1.5">
+          How many engineers must be on-call concurrently per shift slot.
+        </p>
       </div>
 
       {/* Start hour + timezone (only meaningful when <24h) */}

@@ -71,7 +71,7 @@ describe("scheduler.generateSchedule", () => {
     }
   });
 
-  it("generates one shift per slot per pod (no double-booking within a pod)", () => {
+  it("generates one shift per slot per pod when engineersPerShift=1 (no double-booking)", () => {
     const engineers = Array.from({ length: 15 }, (_, i) => makeEngineer(i + 1));
     const result = generateSchedule({ year: 2026, podCount: 2, engineers });
     // Group by pod + startMs. Each (pod, startMs) should have at most 1 shift.

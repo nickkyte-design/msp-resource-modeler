@@ -4,7 +4,7 @@
  */
 
 /** App version surfaced in the UI; bumped each release. */
-export const APP_VERSION = "2.9.0";
+export const APP_VERSION = "2.10.0";
 
 export const TIMEZONES = ["EDT", "PDT", "SGT", "BST", "IST"] as const;
 export type Timezone = (typeof TIMEZONES)[number];
@@ -101,6 +101,10 @@ export interface HeadcountSuggestion {
 export const MAX_POD_COUNT = 10;
 export const MIN_POD_COUNT = 1;
 
+/** v2.10.0: concurrent on-call engineers per pod per shift slot. */
+export const MIN_ENGINEERS_PER_SHIFT = 1;
+export const MAX_ENGINEERS_PER_SHIFT = 10;
+
 export function computeHeadcountSuggestion(
   podCount: number,
   ptoEnabled: boolean,
@@ -179,13 +183,17 @@ export function computeHeadcountSuggestionForCoverage(
   weeklyHoursPerPod: number[],
   ptoEnabled: boolean,
   holidaysEnabled: boolean,
+  /** v2.10.0: per-pod concurrent on-call depth. Defaults to [1,1,...] if omitted. */
+  engineersPerShiftPerPod?: number[],
 ): HeadcountSuggestion {
   const shiftsPerEngineerPerWeek = SHIFTS_PER_BLOCK;
   // For each pod: ceil(weeklyHours / preferred-shift-hours / shifts-per-engineer-per-week)
-  // is the minimum engineers needed just to fill the rotation in that pod.
-  const perPodMins = weeklyHoursPerPod.slice(0, podCount).map((h) => {
+  // is the minimum engineers needed just to fill the rotation in that pod,
+  // then multiply by the concurrent on-call depth.
+  const perPodMins = weeklyHoursPerPod.slice(0, podCount).map((h, i) => {
+    const depth = engineersPerShiftPerPod?.[i] ?? 1;
     const shiftsPerWeek = Math.ceil(Math.max(0, h) / PREFERRED_SHIFT_HOURS);
-    return Math.max(1, Math.ceil(shiftsPerWeek / shiftsPerEngineerPerWeek));
+    return Math.max(depth, Math.ceil(shiftsPerWeek / shiftsPerEngineerPerWeek) * depth);
   });
   const maxMin = perPodMins.reduce((a, b) => Math.max(a, b), 1);
 
