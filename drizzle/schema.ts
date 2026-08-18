@@ -1,4 +1,4 @@
-import { bigint, boolean, integer, json, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, json, numeric, pgTable, serial, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 
 /**
  * Core user table for Supabase Auth integration.
@@ -140,3 +140,103 @@ export const holidays = pgTable("holidays", {
 
 export type Holiday = typeof holidays.$inferSelect;
 export type InsertHoliday = typeof holidays.$inferInsert;
+
+// ============================================================================
+// MSP Resource Modeler tables
+// ============================================================================
+
+/**
+ * Staff — consultants/engineers available for project assignment.
+ * role: their practice area (e.g., 'engineer', 'manager', 'analyst').
+ * status: 'active' | 'inactive' | 'on_leave'.
+ */
+export const staff = pgTable(
+  "staff",
+  {
+    id: serial("id").primaryKey(),
+    accountId: varchar("accountId", { length: 128 }).notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    email: varchar("email", { length: 320 }),
+    role: varchar("role", { length: 64 }).notNull().default("engineer"),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    /** Total hours per week this staff member is available. */
+    availableHoursPerWeek: numeric("availableHoursPerWeek", { precision: 6, scale: 2 }).notNull().default("40"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_staff_accountId_status").on(t.accountId, t.status),
+    index("idx_staff_accountId_createdAt").on(t.accountId, t.createdAt),
+  ]
+);
+
+export type Staff = typeof staff.$inferSelect;
+export type InsertStaff = typeof staff.$inferInsert;
+
+/** Valid values for the `staff.status` column. */
+export const STAFF_STATUS = ["active", "inactive", "on_leave"] as const;
+export type StaffStatus = (typeof STAFF_STATUS)[number];
+
+/**
+ * Projects — client engagements that need staff coverage.
+ * status: 'active' | 'completed' | 'on_hold' | 'cancelled'.
+ */
+export const projects = pgTable(
+  "projects",
+  {
+    id: serial("id").primaryKey(),
+    accountId: varchar("accountId", { length: 128 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    /** Weekly hours of coverage the project requires. */
+    requiredHoursPerWeek: numeric("requiredHoursPerWeek", { precision: 6, scale: 2 }).notNull().default("40"),
+    startDate: date("startDate"),
+    endDate: date("endDate"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_projects_accountId_status").on(t.accountId, t.status),
+    index("idx_projects_accountId_createdAt").on(t.accountId, t.createdAt),
+  ]
+);
+
+export type Project = typeof projects.$inferSelect;
+export type InsertProject = typeof projects.$inferInsert;
+
+/** Valid values for the `projects.status` column. */
+export const PROJECT_STATUS = ["active", "completed", "on_hold", "cancelled"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUS)[number];
+
+/**
+ * Assignments — links a staff member to a project for a date range.
+ * A staff member can be on multiple projects simultaneously.
+ * hoursPerWeek: how many hours/week they dedicate to this assignment.
+ */
+export const assignments = pgTable(
+  "assignments",
+  {
+    id: serial("id").primaryKey(),
+    accountId: varchar("accountId", { length: 128 }).notNull(),
+    staffId: integer("staffId").notNull().references(() => staff.id, { onDelete: "cascade" }),
+    projectId: integer("projectId").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    hoursPerWeek: numeric("hoursPerWeek", { precision: 6, scale: 2 }).notNull().default("40"),
+    startDate: date("startDate").notNull(),
+    endDate: date("endDate"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_assignments_staffId_dates").on(t.staffId, t.startDate, t.endDate),
+    index("idx_assignments_projectId_status").on(t.projectId, t.accountId),
+    index("idx_assignments_accountId_createdAt").on(t.accountId, t.createdAt),
+    /** Prevent the same staff member from being assigned to the same project twice
+     *  in the same date window (same startDate acts as a de-dup key). */
+    unique("uq_assignment_staff_project_start").on(t.staffId, t.projectId, t.startDate),
+  ]
+);
+
+export type Assignment = typeof assignments.$inferSelect;
+export type InsertAssignment = typeof assignments.$inferInsert;
+
